@@ -1,0 +1,30 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "remote" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "environment": "development",
+      "env": { "APP_VARIANT": "development", "EXPO_PUBLIC_API_BASE": "http://localhost:4000/api" },
+      "ios": { "simulator": true }
+    },
+    "development-device": {
+      "extends": "development",
+      "ios": { "simulator": false }
+    },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
+      "environment": "preview",
+      "env": { "APP_VARIANT": "staging", "EXPO_PUBLIC_API_BASE": "https://staging-api.budgrub.com/api" }
+    },
+    "production": {
+      "channel": "production",
+      "environment": "production",
+      "autoIncrement": true,
+      "env": { "APP_VARIANT": "production", "EXPO_PUBLIC_API_BASE": "https://api.budgrub.com/api" }
+    }
+  },
+  "submit": { "production": {} }
+}

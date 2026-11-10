@@ -1,0 +1,7 @@
+{
+  "name": "@budgrub/design-tokens",
+  "version": "0.2.0",
+  "private": true,
+  "main": "tokens.json",
+  "files": ["tokens.json"]
+}

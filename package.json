@@ -1,0 +1,14 @@
+{
+  "name": "budgrub-delivery-mobile",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "smoke": "pnpm --filter @budgrub/mock-api smoke",
+    "driver": "pnpm --filter @budgrub/driver start",
+    "mock-api": "pnpm --filter @budgrub/mock-api start"
+  }
+}

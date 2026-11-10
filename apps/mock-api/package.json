@@ -1,0 +1,13 @@
+{
+  "name": "@budgrub/mock-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mock of the BudGrub driver API (incl. the E10 additions) for local development and contract tests of apps/driver.",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node test/smoke/run.mjs"
+  },
+  "engines": { "node": ">=22.13" }
+}

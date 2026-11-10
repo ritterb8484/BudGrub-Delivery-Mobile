@@ -1,0 +1,95 @@
+{
+  "name": "@budgrub/driver",
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@budgrub/design-tokens": "workspace:*",
+    "@tanstack/react-query": "^5.107.1",
+    "expo": "~58.0.23",
+    "expo-camera": "~58.0.14",
+    "expo-constants": "~58.0.15",
+    "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.18",
+    "expo-device": "~58.0.5",
+    "expo-file-system": "~58.0.13",
+    "expo-image-picker": "~58.0.10",
+    "expo-linking": "~58.0.16",
+    "expo-location": "~58.0.20",
+    "expo-network": "~58.0.4",
+    "expo-notifications": "~58.1.8",
+    "expo-router": "~58.0.30",
+    "expo-secure-store": "~58.0.2",
+    "expo-speech": "~58.0.3",
+    "expo-sqlite": "~58.0.15",
+    "expo-status-bar": "~58.0.4",
+    "expo-task-manager": "~58.0.13",
+    "expo-updates": "~58.0.21",
+    "expo-web-browser": "~58.0.7",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-maps": "1.29.11",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~58.0.4",
+    "jest": "^30.5.2",
+    "jest-expo": "~58.0.14",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "lint": "expo lint",
+    "build": "expo export --platform ios --platform android --output-dir dist",
+    "doctor": "expo-doctor"
+  },
+  "private": true,
+  "jest": {
+    "projects": [
+      {
+        "displayName": "unit",
+        "preset": "jest-expo",
+        "moduleNameMapper": {
+          "^@/(.*)$": "<rootDir>/src/$1"
+        },
+        "testMatch": [
+          "<rootDir>/__tests__/**/*.test.ts"
+        ],
+        "testPathIgnorePatterns": [
+          "\\.integration\\.test\\.ts$"
+        ],
+        "transformIgnorePatterns": [
+          "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg)"
+        ]
+      },
+      {
+        "displayName": "integration",
+        "testEnvironment": "node",
+        "moduleNameMapper": {
+          "^@/(.*)$": "<rootDir>/src/$1"
+        },
+        "testMatch": [
+          "<rootDir>/__tests__/**/*.integration.test.ts"
+        ],
+        "transform": {
+          "^.+\\.[jt]sx?$": [
+            "babel-jest",
+            {
+              "presets": [
+                "babel-preset-expo"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
