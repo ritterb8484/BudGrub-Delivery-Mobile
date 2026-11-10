@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { api, NetworkError } from "@/api/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, ApiError, NetworkError } from "@/api/client";
 import type { DriverTripsResponse } from "@/api/types";
 import { DEFAULT_ID_RULES, type IdRules } from "@/id/validator";
-import { updateTrackingContext } from "@/location/task";
+import { reconcileTracking, updateTrackingContext } from "@/location/task";
 import { kv, KV } from "@/storage/db";
-import { queue, useSyncStatus } from "@/sync/engine";
+import { purgeSettledTrips, queue, useSyncStatus } from "@/sync/engine";
 import { applyPending } from "@/sync/overlay";
 import { tripScope, type QueuedEvent } from "@/sync/queue";
 
@@ -34,7 +34,8 @@ async function fetchDriverTrips(): Promise<DriverTripsResult> {
     else await kv.remove(KV.driverTrips);
     return { data, fromCache: false, cachedAt: null };
   } catch (e) {
-    if (e instanceof NetworkError) {
+    // No coverage or the API is briefly down (5xx): keep working from the saved trip.
+    if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) {
       const c = await kv.get<Cached>(KV.driverTrips);
       if (c) return { data: c.data, fromCache: true, cachedAt: c.at };
     }
@@ -60,9 +61,15 @@ export function useDriverTrips() {
   }, [tripId, sync]);
 
   const current = q.data?.data.current;
+  const fresh = q.data ? !q.data.fromCache : false;
   useEffect(() => {
-    if (current?.status === "departed" && !q.data?.fromCache) void updateTrackingContext(current);
-  }, [current?.id, current?.planVersion, current?.status, q.data?.fromCache]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!fresh) return;
+    if (current?.status === "departed") void updateTrackingContext(current);
+    // The server is the authority on whether a trip is in progress: stop a trace left running for a trip that was
+    // closed or cancelled elsewhere (or the app died mid-close), and drop finished trips' fully-synced events.
+    void reconcileTracking(current ?? null).catch(() => undefined);
+    void purgeSettledTrips(current?.id ?? null).catch(() => undefined);
+  }, [current?.id, current?.planVersion, current?.status, fresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trip = useMemo(() => (current ? applyPending(current, events) : null), [current, events]);
   const rules: IdRules = useMemo(
@@ -74,5 +81,6 @@ export function useDriverTrips() {
 
 export function useRefreshDriver() {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: DRIVER_KEY });
+  // Stable identity: callers put this in effect deps (pay-link polling).
+  return useCallback(() => void qc.invalidateQueries({ queryKey: DRIVER_KEY }), [qc]);
 }

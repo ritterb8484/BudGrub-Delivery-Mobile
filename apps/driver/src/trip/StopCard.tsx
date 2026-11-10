@@ -6,7 +6,7 @@ import { api } from "@/api/client";
 import type { PhoneOutcome, TripStop } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { Btn, Callout, Field, Input, Panel, Row, Select, StatusPill, T } from "@/components/ui";
-import { clock, dollarsToCents, money, STOP_TONE, stopLabel } from "@/lib/format";
+import { clock, money, parseCents, STOP_TONE, stopLabel } from "@/lib/format";
 import { toneColors, radius, space } from "@/theme";
 import { stopAction } from "./state";
 
@@ -25,7 +25,7 @@ const OUTCOMES: { value: PhoneOutcome; label: string }[] = [
  */
 export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: TripStop; tripId: string; floatCents: number; locked: string | null; onRefresh: () => void }) {
   const toast = useToast();
-  const [mode, setMode] = useState<"none" | "phone" | "deliver" | "return">("none");
+  const [openMode, setMode] = useState<"none" | "phone" | "deliver" | "return">("none");
   const [outcome, setOutcome] = useState<PhoneOutcome>("confirmed");
   const [note, setNote] = useState("");
   const [received, setReceived] = useState((s.totalCents / 100).toFixed(2));
@@ -36,9 +36,14 @@ export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: Trip
   const paidAtDoor = s.settledMethod === "aeropay_door" || s.payLink?.status === "paid";
   const isCash = s.paymentMethod === "cash" && !paidAtDoor;
   const ready = Boolean(s.phoneConfirmedAt && s.idVerifiedAt);
-  const receivedCents = dollarsToCents(received);
+  const parsedCents = parseCents(received);
+  const receivedCents = parsedCents ?? 0;
   const change = receivedCents - s.totalCents;
-  const changeProblem = receivedCents < s.totalCents ? `Short by ${money(s.totalCents - receivedCents)}` : change > floatCents ? `Change ${money(change)} exceeds the ${money(floatCents)} you can make change from` : null;
+  const changeProblem =
+    parsedCents === null ? "Enter the cash received as an amount, for example 60.00"
+    : receivedCents < s.totalCents ? `Short by ${money(s.totalCents - receivedCents)}`
+    : change > floatCents ? `Change ${money(change)} exceeds the ${money(floatCents)} you can make change from`
+    : null;
 
   const go = async (action: Parameters<typeof stopAction>[2], body: Record<string, unknown> = {}, meta: Record<string, unknown> = {}) => {
     setBusy(true);
@@ -69,6 +74,14 @@ export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: Trip
     return () => clearInterval(h);
   }, [s.payLink?.status, onRefresh]);
 
+  // The customer paid the link while the cash form was open: there is no cash to count any more.
+  const mode = openMode === "deliver" && !isCash ? "none" : openMode;
+
+  const linkUrl = link?.url ?? s.payLink?.url ?? null;
+  const dial = () => {
+    const number = (s.phone ?? "").replace(/[^\d+]/g, "");
+    void Linking.openURL(`tel:${number}`).catch(() => toast.fail(new Error(`Could not start the call. Dial ${s.phone} from your phone app.`)));
+  };
   const ok = toneColors.green, idle = toneColors.neutral;
   const off = Boolean(locked) || busy;
 
@@ -83,7 +96,7 @@ export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: Trip
       {s.items.map((i, idx) => (
         <Row key={idx} style={{ justifyContent: "space-between" }}>
           <T size="sm">{i.name} × {i.qty}</T>
-          <T size="xs" mono tone="text3">…{i.metrcTag?.slice(-8)}</T>
+          <T size="xs" mono tone="text3">{i.metrcTag ? `…${i.metrcTag.slice(-8)}` : "no tag"}</T>
         </Row>
       ))}
       <Row>
@@ -103,7 +116,7 @@ export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: Trip
             <>
               <T bold>Pay by Bank link sent · waiting for the customer</T>
               <T size="sm" tone="text3">Expires {clock(s.payLink.expiresAt)}. {link?.sentTo ? `Texted to ${link.sentTo}.` : ""} Cash is still fine if they prefer.</T>
-              {link ? <T size="xs" mono tone="text2">{link.url}</T> : null}
+              {linkUrl ? <T size="xs" mono tone="text2">{linkUrl}</T> : null}
             </>
           ) : (
             <>
@@ -129,7 +142,7 @@ export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: Trip
 
       {mode === "phone" ? (
         <View style={{ gap: space[2] }}>
-          {s.phone ? <Btn tone="purple" onPress={() => Linking.openURL(`tel:${s.phone}`)}>Call {s.phone}</Btn> : null}
+          {s.phone ? <Btn tone="purple" onPress={dial}>Call {s.phone}</Btn> : null}
           <Field label="Call outcome"><Select value={outcome} options={OUTCOMES} onChange={setOutcome} /></Field>
           <Field label="Note"><Input value={note} onChangeText={setNote} placeholder="Optional" /></Field>
           <Row>
@@ -149,7 +162,7 @@ export function StopCard({ s, tripId, floatCents, locked, onRefresh }: { s: Trip
           </Callout>
           <Row>
             <View style={{ flex: 1 }}>
-              <Btn tone="green" disabled={off || received === "" || Boolean(changeProblem)} onPress={() => go("deliver", { cashReceivedCents: receivedCents }, { cashReceivedCents: receivedCents, changeCents: Math.max(0, change) })}>Confirm hand-over</Btn>
+              <Btn tone="green" disabled={off || Boolean(changeProblem)} onPress={() => go("deliver", { cashReceivedCents: receivedCents }, { cashReceivedCents: receivedCents, changeCents: Math.max(0, change) })}>Confirm hand-over</Btn>
             </View>
             <View style={{ flex: 1 }}><Btn onPress={() => setMode("none")}>Back</Btn></View>
           </Row>

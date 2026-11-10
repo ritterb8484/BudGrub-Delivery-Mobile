@@ -72,7 +72,13 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   if (!res.ok) throw await parseError(res);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // A 200 that is not JSON is a captive portal or proxy page, not the API: treat it like having no connection.
+    throw new NetworkError("BudGrub could not be reached on this network");
+  }
 }
 
 const enc = encodeURIComponent;

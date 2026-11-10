@@ -83,10 +83,17 @@ export default function IdCheck() {
   };
 
   const doReturn = async (reasons: IdCheckResult["reasons"]) => {
-    const reason = returnReason.trim() || `ID check failed: ${reasons.map((r) => r.message).join(" ")}`;
-    await stopAction(trip.id, stop.orderId, "return", { reason });
-    toast.ok(`${stop.orderNumber} will be returned to the dispensary.`);
-    router.back();
+    if (busy) return; // a second tap would queue a second return, which the server rejects
+    setBusy(true);
+    try {
+      const reason = returnReason.trim() || `ID check failed: ${reasons.map((r) => r.message).join(" ")}`;
+      await stopAction(trip.id, stop.orderId, "return", { reason });
+      toast.ok(`${stop.orderNumber} will be returned to the dispensary.`);
+      router.back();
+    } catch (err) {
+      toast.fail(err);
+      setBusy(false);
+    }
   };
 
   const Adapter = scanners.find((s) => s.id === adapter)!.Component;
@@ -150,7 +157,7 @@ export default function IdCheck() {
             <Panel title="What next?">
               <Btn tone="primary" onPress={() => setPhase({ k: "scan" })}>Retry with another ID</Btn>
               <Field label="Return reason"><Input value={returnReason} onChangeText={setReturnReason} placeholder="ID did not match · under 21 · expired ID" /></Field>
-              <Btn tone="danger" onPress={() => void doReturn(phase.reasons)}>Return this order to the dispensary</Btn>
+              <Btn tone="danger" busy={busy} onPress={() => void doReturn(phase.reasons)}>Return this order to the dispensary</Btn>
             </Panel>
           )}
         </>

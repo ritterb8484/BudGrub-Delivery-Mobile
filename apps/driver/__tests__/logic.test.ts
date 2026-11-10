@@ -1,6 +1,6 @@
 import type { StaffMe, Trip, TripStop } from "@/api/types";
 import { eligibility } from "@/auth/eligibility";
-import { money } from "@/lib/format";
+import { money, parseCents } from "@/lib/format";
 import { manifestLines, newSession, scanTag, sessionIsStale, summarise } from "@/load/manifest";
 import { navigationUrls } from "@/nav/deeplink";
 import { applyPending } from "@/sync/overlay";
@@ -120,5 +120,29 @@ describe("money", () => {
     expect(money(5400)).toBe("$54.00");
     expect(money(123456)).toBe("$1,234.56");
     expect(money(-50)).toBe("-$0.50");
+  });
+});
+
+describe("parseCents (cash entry)", () => {
+  it("reads plain dollar amounts", () => {
+    expect(parseCents("60")).toBe(6000);
+    expect(parseCents("60.")).toBe(6000);
+    expect(parseCents("54.05")).toBe(5405);
+    expect(parseCents(".5")).toBe(50);
+    expect(parseCents(" $20.00 ")).toBe(2000);
+    expect(parseCents("0")).toBe(0);
+  });
+
+  it("refuses anything that is not an amount instead of turning it into 0 or NaN", () => {
+    for (const bad of ["", ".", "1.2.3", "12,50", "-5", "abc", "20.123", "1e3"]) expect(parseCents(bad)).toBeNull();
+  });
+});
+
+describe("eligibility uses the local calendar day", () => {
+  it("keeps a card valid through the evening of its expiry date", () => {
+    const me: StaffMe = { id: "s", name: "J", role: "driver", status: "active", agent: { agentCardNumber: "X", agentCardExpires: "2026-11-10", disclosedToCcb: true } };
+    // 9 PM local on the expiry date (already the next day in UTC for US time zones).
+    expect(eligibility(me, new Date(2026, 10, 10, 21, 0)).cannabis).toBe(true);
+    expect(eligibility(me, new Date(2026, 10, 11, 0, 5)).cannabis).toBe(false);
   });
 });

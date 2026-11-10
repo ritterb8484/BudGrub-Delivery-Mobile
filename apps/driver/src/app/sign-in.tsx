@@ -1,4 +1,3 @@
-import { router } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
 import { SignInCancelled } from "@/auth/oidc";
@@ -17,8 +16,8 @@ export default function SignIn() {
     setBusy(true);
     setError(null);
     try {
+      // No navigation here: the root layout's guard swaps this screen for the app once the session exists.
       await signIn();
-      router.replace("/");
     } catch (e) {
       if (!(e instanceof SignInCancelled)) setError(messageOf(e));
     } finally {

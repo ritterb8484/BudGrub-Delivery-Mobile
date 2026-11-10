@@ -128,6 +128,10 @@ export class EventQueue {
     return e;
   }
 
+  async scopes(): Promise<string[]> {
+    return this.store.scopes();
+  }
+
   async list(scope: string): Promise<QueuedEvent[]> {
     return this.store.listScope(scope);
   }

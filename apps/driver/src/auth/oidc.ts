@@ -45,7 +45,6 @@ export async function signIn(): Promise<{ staff: StaffMe; token: string }> {
   if (result.type !== "success") throw new SignInCancelled();
   const parsed = parseCallback(result.url);
   if ("error" in parsed) throw new Error(parsed.error);
-  const out = await api.authCallback(sessionToken, parsed.code, parsed.state);
-  await tokenStore.set(out.token);
-  return out;
+  // The caller stores the token once it has decided this account may use the device (see AuthProvider.signIn).
+  return api.authCallback(sessionToken, parsed.code, parsed.state);
 }

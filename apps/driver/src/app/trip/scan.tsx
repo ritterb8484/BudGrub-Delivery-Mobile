@@ -32,8 +32,10 @@ export default function LoadScan() {
     void kv.get<LoadSession>(KV.loadSession).then((s) => setSession(s && !sessionIsStale(s, trip) ? s : newSession(trip)));
   }, [trip?.id, trip?.manifestLockedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading || !session) return <Loading />;
+  // The trip check comes first: with no trip there is never a session, and the screen would spin forever.
+  if (isLoading) return <Loading />;
   if (!trip || trip.status !== "planned") return <Screen><Empty title="No trip to load">Loading is done before departure.</Empty></Screen>;
+  if (!session) return <Loading />;
 
   const summary = summarise(session, lines);
 
@@ -115,7 +117,7 @@ export default function LoadScan() {
         {lines.map((l, i) => {
           const done = summary.loaded.includes(l);
           return (
-            <View key={l.tag}>
+            <View key={`${l.orderId}:${l.tag}:${i}`}>
               {i > 0 ? <Divider /> : null}
               <Row style={{ justifyContent: "space-between" }}>
                 <View style={{ flex: 1 }}>

@@ -58,7 +58,6 @@ export async function handleLocations(locations: Location.LocationObject[]): Pro
     }
   }
   if (!kept.length) return;
-  await kv.set(KV.lastPingAt, cursor);
 
   const pings: LocationPing[] = kept.map((l) => ({
     lat: l.coords.latitude,
@@ -69,6 +68,8 @@ export async function handleLocations(locations: Location.LocationObject[]): Pro
     recordedAt: new Date(l.timestamp).toISOString(),
   }));
   await enqueue({ scope: tripScope(ctx.tripId), kind: "location", path: eventPaths.location(ctx.tripId), body: { pings }, meta: { count: pings.length } });
+  // Advance the cursor only once the batch is durable, so a failed write is retried with the next delivery.
+  await kv.set(KV.lastPingAt, cursor);
 
   // Dwell detection.
   const state = (await kv.get<DwellState>(KV.dwellState)) ?? initialDwellState();
@@ -96,6 +97,14 @@ export async function handleLocations(locations: Location.LocationObject[]): Pro
     } else {
       const p = await kv.get<DwellPrompt>(KV.dwellPrompt);
       if (p && p.startedAt === ev.startedAt) await kv.set(KV.dwellPrompt, { ...p, endedAt: ev.endedAt, durationSec: ev.durationSec });
+      // Close the dwell on the trip timeline too; otherwise the server only ever sees it start.
+      await enqueue({
+        scope: tripScope(ctx.tripId),
+        kind: "trip_event",
+        path: eventPaths.events(ctx.tripId),
+        body: { kind: "dwell", lat: ev.at.lat, lng: ev.at.lng, startedAt: new Date(ev.startedAt).toISOString(), endedAt: new Date(ev.endedAt).toISOString() },
+        meta: { event: "dwell_ended" },
+      });
     }
   }
 }
@@ -134,6 +143,22 @@ export async function startTracking(trip: Trip): Promise<boolean> {
 export async function updateTrackingContext(trip: Trip) {
   const cur = await kv.get<ActiveTripContext>(KV.activeTrip);
   if (cur?.tripId === trip.id) await kv.set(KV.activeTrip, activeContextFor(trip));
+}
+
+/**
+ * Stop the trace when the server no longer has the tracked trip in progress: it was closed or cancelled from the
+ * dispatch side, or the app died between closing the trip and stopping the task. Without this the phone would keep
+ * recording the driver's location after the trip is over.
+ */
+export async function reconcileTracking(current: Pick<Trip, "id" | "status"> | null): Promise<void> {
+  const ctx = await kv.get<ActiveTripContext>(KV.activeTrip);
+  const running = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
+  if (!ctx && !running) return;
+  // Same trip, in progress — or still "planned" in a payload fetched just before departure was confirmed.
+  if (ctx && current && current.id === ctx.tripId && (current.status === "departed" || current.status === "planned")) return;
+  // A trip that just departed is handled by startTracking; never stop it from here.
+  if (!ctx && current?.status === "departed") return;
+  await stopTracking();
 }
 
 export async function stopTracking(): Promise<void> {

@@ -17,11 +17,12 @@ import { DRIVER_KEY } from "@/trip/useDriverTrips";
 /** Trip offers, plan amendments and return orders arrive by push (services/notifications.ts templates). */
 function PushBridge() {
   const qc = useQueryClient();
-  const { status } = useAuth();
+  const { status, mode } = useAuth();
   useEffect(() => {
     void ensureChannels();
     if (status === "signedIn") void registerPush().catch(() => undefined);
   }, [status]);
+  const canOpenTrip = status === "signedIn" && mode === "cannabis";
   useEffect(() => {
     const received = Notifications.addNotificationReceivedListener((n) => {
       const type = (n.request.content.data as { type?: string } | undefined)?.type;
@@ -30,14 +31,52 @@ function PushBridge() {
     const tapped = Notifications.addNotificationResponseReceivedListener((r) => {
       void qc.invalidateQueries({ queryKey: DRIVER_KEY });
       const type = (r.notification.request.content.data as { type?: string } | undefined)?.type;
-      if (type) router.navigate("/trip");
+      // Only a signed-in cannabis agent has a trip screen; anyone else stays where the gate put them.
+      if (type && canOpenTrip) router.navigate("/trip");
     });
     return () => {
       received.remove();
       tapped.remove();
     };
-  }, [qc]);
+  }, [qc, canOpenTrip]);
   return null;
+}
+
+/**
+ * Every screen except sign-in needs a session. When the session ends anywhere in the app (sign-out, or a 401 because
+ * the token was revoked or the user suspended), the guard removes the signed-in screens from the stack and lands on
+ * sign-in, so nothing of the previous session can be reached with the back gesture.
+ */
+function RootStack() {
+  const { status } = useAuth();
+  const signedOut = status === "signedOut";
+  return (
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: color.surface },
+        headerTintColor: color.text,
+        headerTitleStyle: { fontWeight: "700" },
+        contentStyle: { backgroundColor: color.bg },
+      }}
+    >
+      <Stack.Protected guard={!signedOut} redirectTo="/sign-in">
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="permissions" options={{ title: "Before your first shift", headerBackVisible: false }} />
+        <Stack.Screen name="courier" options={{ title: "Food courier" }} />
+        <Stack.Screen name="trip/index" options={{ title: "My trip", headerBackVisible: false }} />
+        <Stack.Screen name="trip/scan" options={{ title: "Scan the load" }} />
+        <Stack.Screen name="trip/id-check" options={{ title: "Check government ID" }} />
+        <Stack.Screen name="trip/fuel-stop" options={{ title: "Fuel stop" }} />
+        <Stack.Screen name="incident" options={{ title: "Report an incident" }} />
+        <Stack.Screen name="sync" options={{ title: "Sync" }} />
+        <Stack.Screen name="account" options={{ title: "Account" }} />
+      </Stack.Protected>
+      <Stack.Protected guard={signedOut} redirectTo="/">
+        <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+      </Stack.Protected>
+      <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+    </Stack>
+  );
 }
 
 export default function RootLayout() {
@@ -50,27 +89,7 @@ export default function RootLayout() {
           <AuthProvider>
             <PushBridge />
             <StatusBar style="light" />
-            <Stack
-              screenOptions={{
-                headerStyle: { backgroundColor: color.surface },
-                headerTintColor: color.text,
-                headerTitleStyle: { fontWeight: "700" },
-                contentStyle: { backgroundColor: color.bg },
-              }}
-            >
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-              <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-              <Stack.Screen name="permissions" options={{ title: "Before your first shift", headerBackVisible: false }} />
-              <Stack.Screen name="courier" options={{ title: "Food courier" }} />
-              <Stack.Screen name="trip/index" options={{ title: "My trip", headerBackVisible: false }} />
-              <Stack.Screen name="trip/scan" options={{ title: "Scan the load" }} />
-              <Stack.Screen name="trip/id-check" options={{ title: "Check government ID" }} />
-              <Stack.Screen name="trip/fuel-stop" options={{ title: "Fuel stop" }} />
-              <Stack.Screen name="incident" options={{ title: "Report an incident" }} />
-              <Stack.Screen name="sync" options={{ title: "Sync" }} />
-              <Stack.Screen name="account" options={{ title: "Account" }} />
-            </Stack>
+            <RootStack />
           </AuthProvider>
         </ToastProvider>
       </QueryClientProvider>

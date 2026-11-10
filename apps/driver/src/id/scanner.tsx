@@ -4,6 +4,7 @@ import { StyleSheet, View } from "react-native";
 import { Btn, Callout, Field, Input, Loading, Row, Select, T } from "@/components/ui";
 import { color, radius, space } from "@/theme";
 import { AamvaParseError, parseAamva } from "./aamva";
+import { formatDateInput } from "./validator";
 
 /**
  * ID scanner adapter (BUD-101). No approved scanner SDK is in the repo yet, so two adapters ship:
@@ -73,15 +74,17 @@ function Pdf417Scanner({ onResult }: ScannerProps) {
   );
 }
 
-function ManualEntry({ idTypes, recipient, onResult }: ScannerProps) {
-  const [f, setF] = useState({ name: recipient, dob: "", idType: idTypes[0] ?? "drivers_license", last4: "", expires: "" });
+function ManualEntry({ idTypes, onResult }: ScannerProps) {
+  // The name starts empty on purpose: it must be read off the ID, not carried over from the order, or the name
+  // check would pass for whoever is at the door.
+  const [f, setF] = useState({ name: "", dob: "", idType: idTypes[0] ?? "drivers_license", last4: "", expires: "" });
   const iso = /^\d{4}-\d{2}-\d{2}$/;
   return (
     <View style={{ gap: space[3] }}>
-      <Field label="Name on ID"><Input value={f.name} onChangeText={(v) => setF({ ...f, name: v })} autoCapitalize="words" /></Field>
+      <Field label="Name on ID" hint="Type it exactly as printed on the ID."><Input value={f.name} onChangeText={(v) => setF({ ...f, name: v })} autoCapitalize="words" autoCorrect={false} /></Field>
       <Row>
-        <View style={{ flex: 1 }}><Field label="Date of birth" hint="YYYY-MM-DD"><Input value={f.dob} onChangeText={(v) => setF({ ...f, dob: v })} placeholder="1990-04-02" keyboardType="numbers-and-punctuation" maxLength={10} /></Field></View>
-        <View style={{ flex: 1 }}><Field label="Expires" hint="YYYY-MM-DD"><Input value={f.expires} onChangeText={(v) => setF({ ...f, expires: v })} placeholder="2030-04-02" keyboardType="numbers-and-punctuation" maxLength={10} /></Field></View>
+        <View style={{ flex: 1 }}><Field label="Date of birth" hint="YYYY-MM-DD"><Input value={f.dob} onChangeText={(v) => setF({ ...f, dob: formatDateInput(v) })} placeholder="1990-04-02" keyboardType="number-pad" maxLength={10} /></Field></View>
+        <View style={{ flex: 1 }}><Field label="Expires" hint="YYYY-MM-DD"><Input value={f.expires} onChangeText={(v) => setF({ ...f, expires: formatDateInput(v) })} placeholder="2030-04-02" keyboardType="number-pad" maxLength={10} /></Field></View>
       </Row>
       <Field label="ID type"><Select value={f.idType} options={idTypes.map((t) => ({ value: t, label: t.replace(/_/g, " ") }))} onChange={(v) => setF({ ...f, idType: v })} /></Field>
       <Field label="Last 4 of ID number"><Input value={f.last4} onChangeText={(v) => setF({ ...f, last4: v.replace(/\s/g, "") })} maxLength={4} autoCapitalize="characters" /></Field>

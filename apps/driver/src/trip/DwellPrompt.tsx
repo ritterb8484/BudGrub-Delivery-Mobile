@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { Modal, StyleSheet, View } from "react-native";
 import { Btn, T } from "@/components/ui";
@@ -10,11 +10,16 @@ import { color, radius, space } from "@/theme";
 /**
  * BUD-88: the background task flags an off-route dwell; the agent must say what it was. A fuel stop is logged on the
  * trip timeline; anything else is an unauthorized stop reported as an incident.
+ *
+ * A native Modal stays on top of screens pushed after it opened, so it is shown only while the trip screen is
+ * focused: tapping an answer opens the form unobstructed, and coming back without saving shows the prompt again.
  */
 export function DwellPrompt({ tripId }: { tripId: string }) {
+  const focused = useIsFocused();
   const [p, setP] = useState<Prompt | null>(null);
   const [now, setNow] = useState(0);
   useEffect(() => {
+    if (!focused) return;
     let live = true;
     const read = () =>
       kv.get<Prompt>(KV.dwellPrompt).then((v) => {
@@ -28,9 +33,9 @@ export function DwellPrompt({ tripId }: { tripId: string }) {
       live = false;
       clearInterval(h);
     };
-  }, [tripId]);
+  }, [tripId, focused]);
 
-  if (!p) return null;
+  if (!p || !focused) return null;
   const mins = Math.max(1, Math.round(((p.endedAt ?? now) - p.startedAt) / 60_000));
   const params = { lat: String(p.lat), lng: String(p.lng), startedAt: new Date(p.startedAt).toISOString(), endedAt: p.endedAt ? new Date(p.endedAt).toISOString() : "", durationSec: String(mins * 60), fromPrompt: "1" };
   return (
@@ -38,7 +43,7 @@ export function DwellPrompt({ tripId }: { tripId: string }) {
       <View style={s.overlay}>
         <View style={s.sheet} accessibilityViewIsModal>
           <T bold size="xl" tone="amber">Stopped off route</T>
-          <T tone="text2" size="md">You have been stationary for {mins} min since {clock(new Date(p.startedAt).toISOString())}, outside the dispensary and your planned stops. Every stop on a delivery trip must be recorded.</T>
+          <T tone="text2" size="md">You {p.endedAt ? "were" : "have been"} stationary for {mins} min since {clock(new Date(p.startedAt).toISOString())}, outside the dispensary and your planned stops. Every stop on a delivery trip must be recorded.</T>
           <Btn tone="purple" onPress={() => router.push({ pathname: "/trip/fuel-stop", params })}>Fuel stop</Btn>
           <Btn tone="danger" onPress={() => router.push({ pathname: "/incident", params: { ...params, kind: "unauthorized_stop" } })}>Report unauthorized stop</Btn>
         </View>

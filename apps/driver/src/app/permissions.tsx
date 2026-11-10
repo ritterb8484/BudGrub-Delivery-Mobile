@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, View } from "react-native";
+import { AppState, Linking, View } from "react-native";
+import { useToast } from "@/components/toast";
 import { Btn, Callout, Panel, Screen, StatusPill, T } from "@/components/ui";
 import { permissionSnapshot, requestBackground, requestForeground, requestNotifications, type PermissionSnapshot } from "@/location/permissions";
 import { registerPush } from "@/push/register";
@@ -36,24 +37,41 @@ const STEPS = [
 ];
 
 export default function Permissions() {
+  const toast = useToast();
   const [snap, setSnap] = useState<PermissionSnapshot | null>(null);
   const [i, setI] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** Steps where the system prompt was requested and the permission is still off: the OS will not ask again. */
+  const [refused, setRefused] = useState<Record<string, boolean>>({});
 
-  const reload = async () => setSnap(await permissionSnapshot());
+  // Also re-read when the driver comes back from the Settings app.
   useEffect(() => {
-    void permissionSnapshot().then(setSnap);
+    let live = true;
+    const read = () => void permissionSnapshot().then((s) => live && setSnap(s));
+    read();
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st === "active") read();
+    });
+    return () => {
+      live = false;
+      sub.remove();
+    };
   }, []);
 
   const step = STEPS[i];
   const granted = snap?.[step?.key ?? "notifications"] ?? false;
+  const needsForegroundFirst = step?.key === "background" && snap !== null && !snap.foreground;
 
   const ask = async () => {
     setBusy(true);
     try {
-      await step.request();
+      const ok = await step.request();
       if (step.key === "notifications") void registerPush().catch(() => undefined);
-      await reload();
+      setSnap(await permissionSnapshot());
+      setRefused((r) => ({ ...r, [step.key]: !ok }));
+    } catch (e) {
+      toast.fail(e);
+      setRefused((r) => ({ ...r, [step.key]: true }));
     } finally {
       setBusy(false);
     }
@@ -61,16 +79,20 @@ export default function Permissions() {
 
   const finish = async () => {
     await kv.set(KV.permissionsSeen, true);
-    router.replace("/");
+    // Opened from the trip or account screen: go back there. First run: continue through the gate.
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
   };
+  const next = () => (i < STEPS.length - 1 ? setI(i + 1) : void finish());
 
   if (!step) return null;
   return (
     <Screen
       footer={
         <>
-          {granted ? <Btn tone="purple" onPress={() => (i < STEPS.length - 1 ? setI(i + 1) : finish())}>{i < STEPS.length - 1 ? "Next" : "Done"}</Btn> : <Btn tone="purple" busy={busy} onPress={ask}>{step.cta}</Btn>}
-          {!granted ? <Btn onPress={() => (i < STEPS.length - 1 ? setI(i + 1) : finish())}>Not now</Btn> : null}
+          {granted ? <Btn tone="purple" onPress={next}>{i < STEPS.length - 1 ? "Next" : "Done"}</Btn> : <Btn tone="purple" busy={busy} disabled={needsForegroundFirst} onPress={ask}>{step.cta}</Btn>}
+          {!granted ? <Btn onPress={next}>Not now</Btn> : null}
+          {i > 0 ? <Btn onPress={() => setI(i - 1)}>Back</Btn> : null}
         </>
       }
     >
@@ -78,12 +100,19 @@ export default function Permissions() {
       <Panel title={step.title} right={<StatusPill tone={granted ? "green" : "neutral"}>{granted ? "Allowed" : "Not allowed"}</StatusPill>}>
         <T tone="text2" size="md">{step.body}</T>
       </Panel>
-      {step.key === "background" && snap && !snap.foreground ? <Callout tone="amber" title="Allow location while using the app first">Go back one step; the “Always” option is offered after that.</Callout> : null}
+      {needsForegroundFirst ? <Callout tone="amber" title="Allow location while using the app first">Tap Back to return to the previous step; the “Always” option is offered after that.</Callout> : null}
       {step.key === "background" && !granted ? (
         <Callout tone="danger" title="Required for cannabis deliveries">
           <View style={{ gap: space[2] }}>
             <T tone="text2">You can use the app without it, but you will not be able to start a cannabis shift.</T>
-            <Btn size="sm" onPress={() => Linking.openSettings()}>Open Settings</Btn>
+            <Btn size="sm" onPress={() => void Linking.openSettings()}>Open Settings</Btn>
+          </View>
+        </Callout>
+      ) : !granted && refused[step.key] ? (
+        <Callout tone="amber" title="Still not allowed">
+          <View style={{ gap: space[2] }}>
+            <T tone="text2">If no prompt appeared, your phone has stopped asking. Turn it on for BudGrub Driver in Settings, then come back.</T>
+            <Btn size="sm" onPress={() => void Linking.openSettings()}>Open Settings</Btn>
           </View>
         </Callout>
       ) : null}

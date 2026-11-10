@@ -1,4 +1,5 @@
 import type { StaffMe } from "@/api/types";
+import { localIsoDate } from "@/id/validator";
 
 /**
  * Which modes this staff member may use (BUD-67, NAC 678B.327). Cannabis mode requires role `driver` and an active
@@ -21,7 +22,8 @@ export function eligibility(me: StaffMe | null, today: Date = new Date()): Eligi
   else {
     if (!a.agentCardNumber) problems.push("Agent card number missing");
     if (!a.agentCardExpires) problems.push("Agent card expiry missing");
-    else if (a.agentCardExpires.slice(0, 10) < today.toISOString().slice(0, 10)) problems.push(`Agent card expired ${a.agentCardExpires.slice(0, 10)}`);
+    // Local calendar day: in UTC a Nevada evening is already "tomorrow", which expired cards on their last valid day.
+    else if (a.agentCardExpires.slice(0, 10) < localIsoDate(today)) problems.push(`Agent card expired ${a.agentCardExpires.slice(0, 10)}`);
     if (a.disclosedToCcb === false) problems.push("Agent card not disclosed to the CCB");
     if (a.status && a.status !== "active") problems.push("Agent record is not active");
     for (const p of a.problems ?? []) if (!problems.includes(p)) problems.push(p);

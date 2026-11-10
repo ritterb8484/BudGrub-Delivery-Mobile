@@ -19,8 +19,14 @@ export function clock(iso: string | null | undefined): string {
   return `${h}:${m} ${ap}`;
 }
 
-export function dollarsToCents(v: string): number {
-  return Math.round(Number(v || 0) * 100);
+/**
+ * Cents from a typed dollar amount, or null when it is not a plain non-negative amount ("", ".", "1.2.3", "12,50").
+ * Cash figures go on the trip record, so an unreadable entry must block the action instead of being sent as 0/NaN.
+ */
+export function parseCents(v: string): number | null {
+  const t = v.trim().replace(/^\$/, "");
+  if (!/^(\d+\.?\d{0,2}|\.\d{1,2})$/.test(t)) return null;
+  return Math.round(Number(t) * 100);
 }
 
 export type Tone = "neutral" | "purple" | "blue" | "green" | "amber" | "danger";

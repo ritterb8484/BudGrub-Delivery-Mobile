@@ -1,13 +1,13 @@
 import { useMutation } from "@tanstack/react-query";
-import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { Image, View } from "react-native";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import { AppState, Image, View } from "react-native";
 import { api } from "@/api/client";
 import type { ChecklistItem, Trip } from "@/api/types";
 import { RouteMap } from "@/components/RouteMap";
 import { useToast } from "@/components/toast";
 import { Btn, Callout, CheckRow, Divider, Field, Input, Panel, Row, Select, StatusPill, T } from "@/components/ui";
-import { clock, dollarsToCents, money, plural } from "@/lib/format";
+import { clock, money, parseCents, plural } from "@/lib/format";
 import { manifestLines, summarise } from "@/load/manifest";
 import { permissionSnapshot } from "@/location/permissions";
 import { startTracking } from "@/location/task";
@@ -46,9 +46,24 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
   const [photo, setPhoto] = useState<{ mime: string; dataBase64: string; previewUri: string } | null>(null);
   const [alwaysLocation, setAlwaysLocation] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    void permissionSnapshot().then((p) => setAlwaysLocation(p.background));
-  }, [local.ready]);
+  // Re-read on every return to this screen or to the app: the permission is fixed on another screen or in Settings.
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      const read = () => void permissionSnapshot().then((p) => live && setAlwaysLocation(p.background));
+      read();
+      const sub = AppState.addEventListener("change", (st) => {
+        if (st === "active") read();
+      });
+      return () => {
+        live = false;
+        sub.remove();
+      };
+    }, []),
+  );
+
+  const cashTrip = trip.cashExpectedCents > 0;
+  const floatCents = float.trim() === "" ? 0 : parseCents(float);
 
   const decline = useMutation({
     mutationFn: () => api.decline(trip.id, declineReason === "other" ? declineNote.trim() : `${DECLINE_REASONS.find((r) => r.value === declineReason)!.label}${declineNote.trim() ? `: ${declineNote.trim()}` : ""}`),
@@ -79,8 +94,11 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
 
   const depart = useMutation({
     mutationFn: async () => {
-      const t = await api.depart(trip.id, answers, dollarsToCents(float));
-      await startTracking({ ...trip, ...t });
+      if (floatCents === null) throw new Error("Enter the float as an amount, for example 40.00.");
+      const t = await api.depart(trip.id, answers, cashTrip ? floatCents : 0);
+      // The trip has departed on the server whatever happens next; the trip screen retries and warns if the trace
+      // cannot start, so a tracking error must not be reported as a failed departure.
+      await startTracking({ ...trip, ...t }).catch(() => false);
       return t;
     },
     onSuccess: () => {
@@ -103,6 +121,7 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
     !load && "Scan every package on the manifest.",
     !loadConfirmed && (local.attestation ? "Waiting for the server to confirm the load attestation." : "Attest the sealed load."),
     !checklistDone && "Complete the shift-start checklist.",
+    cashTrip && floatCents === null && "Enter the float as an amount, for example 40.00.",
     alwaysLocation === false && "Allow \"Always\" location to start a cannabis shift.",
   ].filter(Boolean) as string[];
 
@@ -187,7 +206,7 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
 
           <Panel title="3 · Shift-start checklist">
             {checklist.map((c) => <CheckRow key={c.key} checked={!!answers[c.key]} onChange={(v) => setAnswers((a) => ({ ...a, [c.key]: v }))}>{c.label}</CheckRow>)}
-            {trip.cashExpectedCents > 0 ? (
+            {cashTrip ? (
               <Field label="Float issued by the dispensary ($)" hint="Count the change float you were handed. Change at the door can only come from this float plus cash collected.">
                 <Input keyboardType="decimal-pad" value={float} onChangeText={setFloat} placeholder="0.00" />
               </Field>
@@ -210,12 +229,15 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
               </>
             )}
           </Panel>
-          <Btn tone="danger" onPress={() => setDeclining(true)}>Decline this trip…</Btn>
+          {!declining ? <Btn tone="danger" onPress={() => setDeclining(true)}>Decline this trip…</Btn> : null}
           {declining ? (
             <Panel title="Decline">
               <Field label="Why are you declining?"><Select value={declineReason} options={[...DECLINE_REASONS]} onChange={setDeclineReason} /></Field>
-              <Field label="Note"><Input value={declineNote} onChangeText={setDeclineNote} /></Field>
-              <Btn tone="danger" busy={decline.isPending} disabled={declineReason === "other" && declineNote.trim().length < 3} onPress={() => decline.mutate()}>Decline trip</Btn>
+              <Field label={declineReason === "other" ? "Reason" : "Note (optional)"}><Input value={declineNote} onChangeText={setDeclineNote} placeholder="Recorded on your driver record" /></Field>
+              <Row>
+                <View style={{ flex: 1 }}><Btn tone="danger" busy={decline.isPending} disabled={declineReason === "other" && declineNote.trim().length < 3} onPress={() => decline.mutate()}>Decline trip</Btn></View>
+                <View style={{ flex: 1 }}><Btn onPress={() => setDeclining(false)}>Back</Btn></View>
+              </Row>
             </Panel>
           ) : null}
         </>
@@ -227,7 +249,7 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
 function CapMeter({ label, value, cap, unit }: { label: string; value: number; cap: number | null; unit: "g" | "$" }) {
   const pct = cap ? Math.min(1, value / cap) : 0;
   const over = cap != null && value > cap;
-  const fmt = (n: number) => (unit === "$" ? `$${n.toFixed(2)}` : `${n} g`);
+  const fmt = (n: number) => (unit === "$" ? `$${n.toFixed(2)}` : `${Math.round(n * 100) / 100} g`);
   return (
     <View style={{ gap: 4 }}>
       <Row style={{ justifyContent: "space-between" }}>

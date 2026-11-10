@@ -120,6 +120,22 @@ export async function tripQueueClear(tripId: string): Promise<{ clear: boolean; 
   return { clear: pending === 0, pending };
 }
 
+/**
+ * Drop the local event log of trips that are no longer the current one, once nothing in it is waiting to upload.
+ * The app purges a trip it closes itself; this covers trips closed, cancelled or reassigned from the dispatch side.
+ */
+export async function purgeSettledTrips(currentTripId: string | null): Promise<void> {
+  const keep = currentTripId ? tripScope(currentTripId) : null;
+  let purged = false;
+  for (const scope of await queue.scopes()) {
+    if (!scope.startsWith("trip:") || scope === keep) continue;
+    if ((await queue.pending(scope)).length > 0) continue;
+    await queue.purge(scope);
+    purged = true;
+  }
+  if (purged) await refreshStatus();
+}
+
 /** Start the replay triggers: connectivity regained, app foregrounded, and a timer while anything is pending. */
 export function startSyncLoop(): () => void {
   void refreshStatus().then(() => syncNow());

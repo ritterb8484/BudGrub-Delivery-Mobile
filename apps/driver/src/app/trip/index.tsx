@@ -34,7 +34,8 @@ export default function TripHome() {
   );
 
   if (q.isLoading) return <>{header}<Loading label="Loading your trip…" /></>;
-  if (q.error || !q.data) {
+  // Only when there is nothing to show: a failed background refresh must not take the trip off the screen.
+  if (!q.data) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: color.bg, padding: space[4], gap: space[4] }}>
         {header}
@@ -57,6 +58,7 @@ export default function TripHome() {
         <SyncBar fromCache={q.fromCache} cachedAt={q.cachedAt} />
         {agent.problems.length > 0 ? <Callout tone="danger" title="You cannot be assigned a trip yet">{`${agent.problems.join(". ")}. Ask your dispatcher to update your record.`}</Callout> : null}
         {metrcDegraded ? <Callout tone="danger" title="Metrc is degraded">Deliveries are being recorded locally and queued. Your dispatcher records the manual manifest and departs the trip; hand-overs work as usual.</Callout> : null}
+        {q.error && !q.fromCache ? <Callout tone="amber" title="Could not refresh your trip">{`${messageOf(q.error)} Showing the last version loaded; pull down to try again.`}</Callout> : null}
         {auth.offline || q.fromCache ? <Callout tone="amber" title="Offline">Showing the trip saved on this device. Scans, calls, ID checks and hand-overs keep working and upload in order when you are back online.</Callout> : null}
 
         {!trip ? (

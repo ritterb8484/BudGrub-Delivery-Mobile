@@ -1,5 +1,5 @@
 import { matchNames } from "@/id/nameMatch";
-import { ageOn, DEFAULT_ID_RULES, spokenResult, validateId, type IdDocument } from "@/id/validator";
+import { ageOn, DEFAULT_ID_RULES, formatDateInput, isRealIsoDate, spokenResult, validateId, type IdDocument } from "@/id/validator";
 
 const today = new Date(2026, 10, 10); // 10 Nov 2026 local
 const doc = (o: Partial<IdDocument> = {}): IdDocument => ({ name: "Jamal Pierce", dob: "1990-04-02", idType: "drivers_license", expires: "2030-04-02", last4: "5678", ...o });
@@ -72,5 +72,30 @@ describe("matchNames", () => {
     ["", "Jamal Pierce", "mismatch"],
   ])("%s vs %s → %s", (a, b, expected) => {
     expect(matchNames(a, b)).toBe(expected);
+  });
+});
+
+describe("date entry", () => {
+  it("rejects dates that are well-formed but not on the calendar", () => {
+    expect(isRealIsoDate("1990-04-02")).toBe(true);
+    expect(isRealIsoDate("2000-02-29")).toBe(true);
+    expect(isRealIsoDate("1990-13-45")).toBe(false);
+    expect(isRealIsoDate("2030-02-31")).toBe(false);
+    expect(validateId(doc({ dob: "1990-13-45" }), "Jamal Pierce", rules, { today }).reasons.map((x) => x.code)).toEqual(["DOB_INVALID"]);
+    expect(validateId(doc({ expires: "2030-02-31" }), "Jamal Pierce", rules, { today }).reasons.map((x) => x.code)).toEqual(["EXPIRY_INVALID"]);
+  });
+
+  it("reports a future date of birth once, without a negative age", () => {
+    const r = validateId(doc({ dob: "2031-01-01" }), "Jamal Pierce", rules, { today });
+    expect(r.reasons.map((x) => x.code)).toEqual(["DOB_INVALID"]);
+    expect(r.age).toBeNull();
+  });
+
+  it("inserts the dashes while the agent types digits", () => {
+    expect(formatDateInput("1990")).toBe("1990");
+    expect(formatDateInput("19900")).toBe("1990-0");
+    expect(formatDateInput("19900402")).toBe("1990-04-02");
+    expect(formatDateInput("1990-04-0")).toBe("1990-04-0");
+    expect(formatDateInput("199004021")).toBe("1990-04-02");
   });
 });

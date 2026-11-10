@@ -37,7 +37,8 @@ export function RouteMap({ trip, nextOnly, next, me }: { trip: Trip; nextOnly?: 
   if (!all.length) return <View style={[s.map, s.none]}><T tone="text3">No geocoded addresses to show on the map.</T></View>;
   return (
     <View style={s.map} accessibilityLabel={nextOnly ? "Map of your next stop" : "Route preview map"}>
-      <MapView style={StyleSheet.absoluteFill} initialRegion={region(all)} userInterfaceStyle="dark" showsUserLocation={!!nextOnly} toolbarEnabled={false} pitchEnabled={false} rotateEnabled={false}>
+      {/* initialRegion is read once, so the next-stop map is remounted per stop; otherwise it stays on the last one. */}
+      <MapView key={nextOnly ? (next?.orderId ?? "none") : "route"} style={StyleSheet.absoluteFill} initialRegion={region(all)} userInterfaceStyle="dark" showsUserLocation={!!nextOnly} toolbarEnabled={false} pitchEnabled={false} rotateEnabled={false}>
         {store && !nextOnly ? <Marker coordinate={store} title={trip.dispensary?.name ?? "Dispensary"} pinColor={color.purple} /> : null}
         {stopPts.map(({ s: st, p }) => (
           <Marker key={st.orderId} coordinate={p} title={`${st.seq}. ${st.recipientFirstName ?? st.recipient.split(" ")[0]}`} description={st.eta ? `ETA ${clock(st.eta)}` : st.windowLabel} pinColor={color.green} />

@@ -160,6 +160,8 @@ export const KV = {
   lastPingAt: "trip.lastPingAt",
   lastSyncAt: "sync.lastSyncAt",
   pushToken: "push.token",
+  /** { id, name } of the last driver signed in on this phone; kept across sign-out (the queue may hold their events). */
+  lastStaff: "auth.lastStaff",
   mode: "app.mode",
   permissionsSeen: "app.permissionsSeen",
 } as const;

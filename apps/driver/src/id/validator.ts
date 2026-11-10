@@ -52,6 +52,20 @@ export function localIsoDate(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** yyyy-mm-dd that is also a real calendar date ("1990-13-45" and "2030-02-31" are not). */
+export function isRealIsoDate(s: string): boolean {
+  if (!ISO_DATE.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** Manual entry: digits typed on the number pad become YYYY-MM-DD; the dashes are inserted for the agent. */
+export function formatDateInput(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 8);
+  return [d.slice(0, 4), d.slice(4, 6), d.slice(6, 8)].filter(Boolean).join("-");
+}
+
 export function ageOn(dobIso: string, todayIso: string): number {
   const [by, bm, bd] = dobIso.split("-").map(Number);
   const [ty, tm, td] = todayIso.split("-").map(Number);
@@ -69,17 +83,18 @@ export function validateId(doc: IdDocument, recipient: string, rules: IdRules, o
   }
 
   let age: number | null = null;
-  if (!ISO_DATE.test(doc.dob)) {
+  if (!isRealIsoDate(doc.dob)) {
     reasons.push({ code: "DOB_INVALID", message: "Date of birth is missing or not a valid date." });
+  } else if (doc.dob > today) {
+    reasons.push({ code: "DOB_INVALID", message: "Date of birth is in the future." });
   } else {
     age = ageOn(doc.dob, today);
     if (age < rules.minAge) reasons.push({ code: "UNDER_AGE", message: `Customer is ${age}. They must be ${rules.minAge} or older.` });
-    if (doc.dob > today) reasons.push({ code: "DOB_INVALID", message: "Date of birth is in the future." });
   }
 
   if (doc.expires === null || doc.expires === "") {
     reasons.push({ code: "EXPIRY_MISSING", message: "Expiry date is required to confirm the ID is unexpired." });
-  } else if (!ISO_DATE.test(doc.expires)) {
+  } else if (!isRealIsoDate(doc.expires)) {
     reasons.push({ code: "EXPIRY_INVALID", message: "Expiry date is not a valid date." });
   } else if (doc.expires < today) {
     reasons.push({ code: "ID_EXPIRED", message: `ID expired on ${doc.expires}.` });

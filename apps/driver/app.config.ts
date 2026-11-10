@@ -13,6 +13,11 @@ const VARIANT = (process.env.APP_VARIANT ?? "development") as "development" | "s
 const SUFFIX = VARIANT === "production" ? "" : VARIANT === "staging" ? ".staging" : ".dev";
 const NAME_SUFFIX = VARIANT === "production" ? "" : VARIANT === "staging" ? " (Staging)" : " (Dev)";
 
+// expo-camera and expo-image-picker both write NSCameraUsageDescription and the last plugin wins, so they must carry
+// the same text, and it has to cover every use of the camera.
+const CAMERA_PURPOSE =
+  "BudGrub scans Metrc package tags and the barcode on the customer's ID, and takes photos of the sealed load and fuel receipts for the trip record. ID images are never stored.";
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: `BudGrub Driver${NAME_SUFFIX}`,
@@ -75,7 +80,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "expo-camera",
       {
-        cameraPermission: "BudGrub scans Metrc package tags and the barcode on the customer's ID. ID images are never stored.",
+        cameraPermission: CAMERA_PURPOSE,
         microphonePermission: false,
         recordAudioAndroid: false,
         barcodeScannerEnabled: true,
@@ -84,7 +89,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       "expo-image-picker",
       {
-        cameraPermission: "BudGrub takes photos of the sealed load and fuel receipts for the trip record.",
+        cameraPermission: CAMERA_PURPOSE,
         photosPermission: false,
         microphonePermission: false,
       },

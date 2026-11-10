@@ -28,9 +28,12 @@ export default function Incident() {
   const { trip } = useDriverTrips();
   const toast = useToast();
   const [kind, setKind] = useState<Kind>(p.kind ?? "crash");
-  const [description, setDescription] = useState(
+  const [prefill] = useState(
     p.kind === "unauthorized_stop" && p.startedAt ? `Stopped off route for about ${Math.round(Number(p.durationSec ?? 0) / 60)} min from ${clock(p.startedAt)}. Reason: ` : "",
   );
+  const [description, setDescription] = useState(prefill);
+  // The prefilled sentence alone is not a report: the agent has to add what happened.
+  const described = description.trim().length >= 5 && (!prefill || description.trim().length >= prefill.trim().length + 3);
   const [location, setLocation] = useState("");
   const [packages, setPackages] = useState("");
   const [police, setPolice] = useState("");
@@ -70,7 +73,7 @@ export default function Incident() {
   };
 
   return (
-    <Screen footer={<Btn tone="danger" busy={busy} disabled={description.trim().length < 5} onPress={submit}>Submit incident</Btn>}>
+    <Screen footer={<Btn tone="danger" busy={busy} disabled={!described} onPress={submit}>Submit incident</Btn>}>
       <T size="sm" tone="text3">
         A crash must reach the Board within 12 hours; theft or loss immediately. Reporting here starts that clock and alerts your dispensary.{!trip ? " You are not on a trip; the report is filed without one." : ""}
       </T>
