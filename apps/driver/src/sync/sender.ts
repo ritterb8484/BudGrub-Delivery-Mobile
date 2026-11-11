@@ -1,4 +1,4 @@
-import { NetworkError, parseError } from "@/api/errors";
+import { errorDetails, NetworkError, parseError } from "@/api/errors";
 import type { Sender } from "./queue";
 
 /**
@@ -35,7 +35,7 @@ export function createHttpSender(post: Poster, opts: { hasToken: () => boolean; 
     }
     const err = await parseError(res);
     if (res.status === 409 && err.code === "OUT_OF_ORDER") {
-      const expected = (err.body as { expectedSequence?: number } | null)?.expectedSequence;
+      const expected = errorDetails(err.body).expectedSequence;
       if (typeof expected === "number") return { kind: "out_of_order", expected };
     }
     if (res.status === 408 || res.status === 429 || res.status >= 500) return { kind: "retry", error: `${err.code}: ${err.message}` };

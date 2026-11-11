@@ -1,6 +1,7 @@
 import { API_BASE, AUTH_CLIENT, AUTH_REDIRECT } from "@/config";
 import { NetworkError, parseError } from "./errors";
-import type { DriverTripsResponse, StaffMe, Trip } from "./types";
+import { normalizeDriverTrips, unwrapPayLink, unwrapTrip } from "./normalize";
+import type { DriverTripsResponse, StaffMe } from "./types";
 
 /**
  * Thin fetch client for the BudGrub API, mirroring apps/admin/src/lib/api.ts. The staff token is sent as
@@ -9,6 +10,8 @@ import type { DriverTripsResponse, StaffMe, Trip } from "./types";
  *
  * Calls that must reach the server immediately (sign-in, departure, decline, plan ack, pay link, trip close) go through
  * here directly. Compliance events go through the offline queue (src/sync) instead.
+ *
+ * Trip payloads pass through ./normalize, which maps the API's field names onto the ones the screens read.
  */
 export { ApiError, NetworkError, parseError } from "./errors";
 
@@ -98,15 +101,15 @@ export const api = {
   deregisterDevice: (platform: "ios" | "android", pushToken: string) => request<void>("/admin/driver/devices", { method: "DELETE", body: { platform, token: pushToken } }),
 
   // Trips (routes/admin/dispatch.ts)
-  driverTrips: () => request<DriverTripsResponse>("/admin/driver/trips"),
+  driverTrips: () => request<DriverTripsResponse>("/admin/driver/trips").then(normalizeDriverTrips),
   decline: (tripId: string, reason: string) => request<{ ok: true }>(`/admin/driver/trips/${enc(tripId)}/decline`, { method: "POST", body: { reason } }),
   depart: (tripId: string, checklist: Record<string, boolean>, floatIssuedCents: number) =>
-    request<Trip>(`/admin/dispatch/trips/${enc(tripId)}/depart`, { method: "POST", body: { checklist, floatIssuedCents } }),
-  ackPlan: (tripId: string, version: number) => request<{ ok: true }>(`/admin/driver/trips/${enc(tripId)}/ack-plan`, { method: "POST", body: { version } }),
+    request<unknown>(`/admin/dispatch/trips/${enc(tripId)}/depart`, { method: "POST", body: { checklist, floatIssuedCents } }).then(unwrapTrip),
+  ackPlan: (tripId: string, version: number) => request<unknown>(`/admin/driver/trips/${enc(tripId)}/ack-plan`, { method: "POST", body: { version } }),
   payLink: (tripId: string, orderId: string) =>
-    request<{ url: string; sentTo: string | null; expiresAt: string }>(`/admin/dispatch/trips/${enc(tripId)}/stops/${enc(orderId)}/pay-link`, { method: "POST", body: {} }),
+    request<unknown>(`/admin/dispatch/trips/${enc(tripId)}/stops/${enc(orderId)}/pay-link`, { method: "POST", body: {} }).then(unwrapPayLink),
   complete: (tripId: string, floatReturnedCents: number) =>
-    request<Trip>(`/admin/dispatch/trips/${enc(tripId)}/complete`, { method: "POST", body: { floatReturnedCents } }),
+    request<unknown>(`/admin/dispatch/trips/${enc(tripId)}/complete`, { method: "POST", body: { floatReturnedCents } }).then(unwrapTrip),
 };
 
 /** Paths for queued (idempotent, sequenced) events. */

@@ -87,6 +87,8 @@ export async function submitLoad(trip: Trip, session: LoadSession, att: Omit<Att
     body: {
       scans: session.scans,
       attestation: { sealed: att.sealed, notVisible: att.notVisible, lockbox: att.lockbox, attestedAt },
+      // What was scanned against: the server refuses the attestation if the trip changed since (BUD-83).
+      planVersion: trip.planVersion,
       manifestLockedAt: trip.manifestLockedAt,
       ...(photo ? { photo } : {}),
     },

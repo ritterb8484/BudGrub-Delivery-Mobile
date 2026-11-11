@@ -25,6 +25,9 @@ const DECLINE_REASONS = [
 /**
  * Planned trip: offer review → accept or decline (BUD-77) → load scan and sealed-load attestation (BUD-83) → shift
  * checklist → depart. Mirrors PlannedTrip in apps/admin/src/pages/DriverTrip.tsx and adds the native-only steps.
+ *
+ * The API locks the manifest at departure, so an offered trip normally has no lock yet. What the agent accepted and
+ * scanned is tied to the plan version instead: an amended plan asks for a new review and a new scan.
  */
 export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip; checklist: ChecklistItem[]; degraded: boolean; onRefresh: () => void }) {
   const toast = useToast();
@@ -116,7 +119,6 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
   const photoNeeded = Boolean(trip.loadPhotoRequired);
 
   const blockers = [
-    !locked && "The dispensary has not locked the manifest yet.",
     load && !load.complete && load.blockedReason,
     !load && "Scan every package on the manifest.",
     !loadConfirmed && (local.attestation ? "Waiting for the server to confirm the load attestation." : "Attest the sealed load."),
@@ -127,7 +129,7 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
 
   return (
     <View style={{ gap: space[4] }}>
-      <Panel title={`${trip.number} · ${plural(trip.stops.length, "stop")}`} right={<StatusPill tone={locked ? "green" : "amber"}>{locked ? `Manifest locked ${clock(trip.manifestLockedAt)}` : "Manifest not locked"}</StatusPill>}>
+      <Panel title={`${trip.number} · ${plural(trip.stops.length, "stop")}`} right={<StatusPill tone={locked ? "green" : "neutral"}>{locked ? `Manifest locked ${clock(trip.manifestLockedAt)}` : `Plan v${trip.planVersion} · locks at departure`}</StatusPill>}>
         <T tone="text2">{trip.vehicle.label}{trip.cashExpectedCents ? ` · ${money(trip.cashExpectedCents)} cash to collect` : ""}{trip.valueCents != null ? ` · ${money(trip.valueCents)} retail` : ""}</T>
         <CapMeter label="Flower-equivalent" value={trip.flowerEquivG} cap={trip.capFlowerEquivG ?? null} unit="g" />
         {trip.capValueCents != null && trip.valueCents != null ? <CapMeter label="Value" value={trip.valueCents / 100} cap={trip.capValueCents / 100} unit="$" /> : null}
@@ -162,8 +164,8 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
       {!accepted ? (
         <Panel title={changed ? "Review the changed trip" : "Accept this trip?"}>
           <T tone="text2">You may travel only between the dispensary and the stops above, in this order.</T>
-          <Btn tone="purple" disabled={!locked || overCap || overValue} onPress={async () => { await clearTripLocal(); await accept(trip); await local.reload(); }}>
-            {!locked ? "Waiting for the manifest lock" : changed ? "I reviewed the changes · accept" : "Accept trip"}
+          <Btn tone="purple" disabled={overCap || overValue} onPress={async () => { await clearTripLocal(); await accept(trip); await local.reload(); }}>
+            {changed ? "I reviewed the changes · accept" : "Accept trip"}
           </Btn>
           {!declining ? (
             <Btn tone="danger" onPress={() => setDeclining(true)}>Decline…</Btn>

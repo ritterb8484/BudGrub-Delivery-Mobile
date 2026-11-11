@@ -95,7 +95,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     ["expo-notifications", { color: tokens.color.purple, defaultChannel: "trips" }],
-    ["react-native-maps", { androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY }],
+    // A blank entry in .env is the same as no key.
+    ["react-native-maps", { androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY || undefined }],
   ],
   experiments: { typedRoutes: true },
   extra: {

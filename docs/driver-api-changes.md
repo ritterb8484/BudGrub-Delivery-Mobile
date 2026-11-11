@@ -1,5 +1,29 @@
 # Driver app (E10): API changes for `apps/api`
 
+> **Status (2026-11-10): ported.** These changes are implemented in the BudGrub monorepo (`apps/api`, migration
+> `010_driver_app.sql`, API version 0.3.0) and covered there by `apps/api/test/smoke/smoke-driver.mjs`. Where the port
+> differs from the text below, the API is the reference:
+>
+> - **Error bodies** are `{ error: "message", details: { code, ... } }`. The app reads the code from `details`
+>   (`src/api/errors.ts`).
+> - **Manifest lock.** The API locks the manifest at departure, so an offered trip has `manifestLockedAt: null`. The load
+>   attestation is tied to the trip's `planVersion` instead (the app sends `planVersion` with `/load`); amending a
+>   planned trip clears it. `MANIFEST_UNLOCKED` does not exist.
+> - **`LOAD_NOT_ATTESTED` at departure** is enforced per dispensary (`tenants.require_load_attestation`, default off),
+>   because the web driver console has no scanner. `tenants.load_photo_required` drives `loadPhotoRequired`.
+> - **Decline** cancels the trip and returns its orders to the ready list (a trip always has an agent in the API's
+>   schema); the decline is recorded in `driver_trip_declines`.
+> - **Field names.** Stops carry `lat`/`lng`, `etaAt` and `dropOffNote`; mutations answer `{ trip }`, the pay link
+>   `{ link }`. `src/api/normalize.ts` maps these onto the shapes the screens read.
+> - **Location pings** may use `at` or `recordedAt`.
+> - **`PLAN_NOT_ACKNOWLEDGED`** is not enforced server-side (section 9): the app blocks stop actions until the plan is
+>   acknowledged, and enforcing it on the server would permanently reject stop actions recorded offline before an
+>   amendment arrived.
+> - **Push (section 10).** Both kinds are supported: native tokens go through FCM, Expo push tokens through Expo's push
+>   service. Notification `data.type` is the template name (`driver_trip_assigned`, `driver_plan_amended`, …).
+> - **Not ported:** per-item `weightG`, `recipientFirstName`, trip value caps, `dwellThresholdSec`, and the compliance
+>   matrix entries at the end of this file.
+
 The driver app in `apps/driver` needs the API changes below. This repository does not contain `apps/api`, so they are
 **specified here and implemented in `apps/mock-api`** (the executable reference, covered by `node:test` and the smoke
 suite). Port each item into the monorepo:

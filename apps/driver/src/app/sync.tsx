@@ -23,7 +23,8 @@ function describe(e: QueuedEvent): string {
 function outcome(e: QueuedEvent): string | null {
   const r = e.response as Record<string, unknown> | null;
   if (!r) return null;
-  if (typeof r.number === "string") return `Filed as ${r.number}`;
+  const number = r.number ?? (r.incident as Record<string, unknown> | undefined)?.number;
+  if (typeof number === "string") return `Filed as ${number}`;
   const metrc = (r.metrc ?? (r.stop as Record<string, unknown> | undefined)?.metrc) as { status?: string } | undefined;
   if (metrc?.status) return `Metrc ${metrc.status}`;
   if (r.replayed) return "Already on the server";
