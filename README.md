@@ -1,7 +1,7 @@
 # BudGrub Delivery Mobile
 
-The native **BudGrub driver app** (Jira epic E10 / BUD-10, cannabis delivery mode) for iOS and Android, built with
-Expo SDK 58 (React Native 0.88, Expo Router), plus a mock of the driver API it talks to.
+The native **BudGrub driver app** for iOS and Android supports cannabis delivery and food courier shifts. It is built
+with Expo SDK 58 (React Native 0.88, Expo Router) and includes a mock for the cannabis trip API.
 
 ```
 apps/driver           React Native / Expo app (BUD-67, 77, 83, 88, 101, 124)
@@ -46,7 +46,7 @@ With `KEYCLOAK_MODE=stub` (the mock always is) the authorize page lists test ide
 | Identity | Role | Result |
 |---|---|---|
 | **Jamal Pierce** (`stub-jamal`) | driver, active agent card | cannabis mode |
-| Rosa Delgado (`stub-rosa`) | driver, expired agent card | courier placeholder only |
+| Rosa Delgado (`stub-rosa`) | driver, expired agent card | no delivery access |
 | Dana Whitfield (`stub-dana`) | dispatcher | no driver modes |
 
 ### Deep link
@@ -82,7 +82,7 @@ FCM/APNs token for the API's FCM sender, `expo` = Expo push token), `EAS_PROJECT
 ### What the app does
 
 - **Foundation (BUD-67):** OIDC sign-in, secure token storage, foreground refresh, 401 → sign-in; cannabis mode only for
-  an active, disclosed, unexpired agent (else the food-courier placeholder, mode switch kept); push registration on
+  an active, disclosed, unexpired agent with cannabis access; push registration on
   sign-in / removal on sign-out; explainer screens before the notification, foreground and "Always" location prompts.
   A cannabis shift cannot depart without Always location.
 - **Trip acceptance (BUD-77):** offer with first names, addresses, items, Metrc tags, weights, per-stop totals, weight
@@ -103,6 +103,20 @@ FCM/APNs token for the API's FCM sender, `expo` = Expo push token), `EAS_PROJECT
   `OUT_OF_ORDER` resolved by gap replay or rebase; queued count and last sync always visible; trip close blocked until
   the queue is empty.
 - **Incidents:** crash (12 h), theft/loss (immediately), unauthorized stop, other — queued like every other event.
+- **Food courier:** start and end a food shift, accept multiple food orders, navigate to pickups and drop-offs,
+  verify kitchen pickup codes, capture delivery proof, report issues, contact customers through masked calling and
+  messaging, view earnings and shift history, and submit onboarding documents. Delivery steps use the durable sync queue.
+
+### Configure food and cannabis access
+
+Point `EXPO_PUBLIC_API_BASE` at the BudGrub API with migration `019_delivery_access.sql` applied. In BudGrub Admin,
+open **Staff**, edit a driver, and choose **Cannabis Only**, **Food Only**, or **Both** under **Delivery access**.
+Company Operations activates food courier profiles from **Couriers** after onboarding review. Existing courier accounts
+retain food access. The bundled mock serves cannabis trips. Use the BudGrub API to exercise food courier flows.
+
+Drivers with Both access switch from **Account**. A food shift can include several active food orders. To switch to
+cannabis, finish the food deliveries and end the food shift. To switch to food, first close the cannabis trip and end
+any open cannabis shift. The API enforces these rules for app and dispatcher actions.
 
 ### Tests
 

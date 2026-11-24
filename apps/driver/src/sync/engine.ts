@@ -5,7 +5,7 @@ import { AppState } from "react-native";
 import { auth, rawRequest } from "@/api/client";
 import { SYNC_INTERVAL_MS } from "@/config";
 import { kv, KV, SqliteQueueStore } from "@/storage/db";
-import { EventQueue, tripScope, type EnqueueInput, type QueuedEvent } from "./queue";
+import { courierScope, EventQueue, tripScope, type EnqueueInput, type QueuedEvent } from "./queue";
 import { createHttpSender } from "./sender";
 
 /**
@@ -20,6 +20,7 @@ function redactOnAck(e: QueuedEvent): Record<string, unknown> | null {
     const b = e.body as { idType?: string; last4?: string | null; dob?: string };
     return { idType: b.idType ?? null, last4: b.last4 ?? null, dobYear: b.dob ? Number(b.dob.slice(0, 4)) : null };
   }
+  if (e.kind === "courier_step") return {};
   if (e.body.photo) return { ...e.body, photo: { uploaded: true } };
   return null;
 }
@@ -64,6 +65,11 @@ export async function refreshStatus() {
   const scopeNames = new Set(scopes.map((e) => e.scope));
   const active = await kv.get<{ tripId: string }>(KV.activeTrip);
   if (active) scopeNames.add(tripScope(active.tripId));
+  const staff = await kv.get<{ id: string }>(KV.lastStaff);
+  if (staff && auth.getToken()) {
+    const prefix = courierScope(staff.id, "");
+    for (const scope of await queue.scopes()) if (scope.startsWith(prefix)) scopeNames.add(scope);
+  }
   scopeNames.add("incidents");
   for (const s of scopeNames) rejected.push(...(await queue.list(s)).filter((e) => e.status === "rejected" && !e.meta.reviewed));
   publish({ pending: scopes.length, rejected, lastSyncAt: status.lastSyncAt ?? (await kv.get<string>(KV.lastSyncAt)) });

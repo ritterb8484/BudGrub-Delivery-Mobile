@@ -32,13 +32,15 @@ function PushBridge() {
       void qc.invalidateQueries({ queryKey: DRIVER_KEY });
       const type = (r.notification.request.content.data as { type?: string } | undefined)?.type;
       // Only a signed-in cannabis agent has a trip screen; anyone else stays where the gate put them.
-      if (type && canOpenTrip) router.navigate("/trip");
+      if (type?.startsWith("courier_")) {
+        if (status === "signedIn" && mode === "courier") router.navigate("/courier");
+      } else if (type && canOpenTrip) router.navigate("/trip");
     });
     return () => {
       received.remove();
       tapped.remove();
     };
-  }, [qc, canOpenTrip]);
+  }, [qc, canOpenTrip, mode, status]);
   return null;
 }
 
@@ -48,7 +50,7 @@ function PushBridge() {
  * sign-in, so nothing of the previous session can be reached with the back gesture.
  */
 function RootStack() {
-  const { status } = useAuth();
+  const { status, mode } = useAuth();
   const signedOut = status === "signedOut";
   return (
     <Stack
@@ -62,12 +64,21 @@ function RootStack() {
       <Stack.Protected guard={!signedOut} redirectTo="/sign-in">
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="permissions" options={{ title: "Before your first shift", headerBackVisible: false }} />
-        <Stack.Screen name="courier" options={{ title: "Food courier" }} />
-        <Stack.Screen name="trip/index" options={{ title: "My trip", headerBackVisible: false }} />
-        <Stack.Screen name="trip/scan" options={{ title: "Scan the load" }} />
-        <Stack.Screen name="trip/id-check" options={{ title: "Check government ID" }} />
-        <Stack.Screen name="trip/fuel-stop" options={{ title: "Fuel stop" }} />
-        <Stack.Screen name="incident" options={{ title: "Report an incident" }} />
+        <Stack.Protected guard={mode === "courier"}>
+          <Stack.Screen name="courier/index" options={{ title: "Food courier", headerBackVisible: false }} />
+          <Stack.Screen name="courier/delivery/[id]" options={{ title: "Delivery" }} />
+          <Stack.Screen name="courier/contact/[orderId]" options={{ title: "Contact customer" }} />
+          <Stack.Screen name="courier/earnings" options={{ title: "Earnings" }} />
+          <Stack.Screen name="courier/shifts" options={{ title: "Shift history" }} />
+          <Stack.Screen name="courier/documents" options={{ title: "Documents" }} />
+        </Stack.Protected>
+        <Stack.Protected guard={mode === "cannabis"}>
+          <Stack.Screen name="trip/index" options={{ title: "My trip", headerBackVisible: false }} />
+          <Stack.Screen name="trip/scan" options={{ title: "Scan the load" }} />
+          <Stack.Screen name="trip/id-check" options={{ title: "Check government ID" }} />
+          <Stack.Screen name="trip/fuel-stop" options={{ title: "Fuel stop" }} />
+          <Stack.Screen name="incident" options={{ title: "Report an incident" }} />
+        </Stack.Protected>
         <Stack.Screen name="sync" options={{ title: "Sync" }} />
         <Stack.Screen name="account" options={{ title: "Account" }} />
       </Stack.Protected>

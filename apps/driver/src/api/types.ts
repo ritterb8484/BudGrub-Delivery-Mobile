@@ -165,6 +165,10 @@ export interface StaffMe {
   name: string;
   email?: string | null;
   role: StaffRole;
+  active?: boolean;
+  deliveryAccess?: "cannabis" | "food" | "both" | null;
+  activeDeliveryMode?: "cannabis" | "food" | null;
+  deliveryShift?: "cannabis" | "food" | null;
   status?: "active" | "suspended" | string;
   tenant?: { id: string; name: string } | null;
   agent?: {

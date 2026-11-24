@@ -5,7 +5,7 @@ import { api, ApiError, auth, NetworkError, rawRequest } from "@/api/client";
 import type { StaffMe } from "@/api/types";
 import { deregisterPush, registerPush } from "@/push/register";
 import { kv, KV } from "@/storage/db";
-import { queue } from "@/sync/engine";
+import { queue, refreshStatus } from "@/sync/engine";
 import { eligibility, type Eligibility } from "./eligibility";
 import { signIn as oidcSignIn, tokenStore } from "./oidc";
 
@@ -15,12 +15,12 @@ interface AuthState {
   status: "loading" | "signedOut" | "signedIn";
   me: StaffMe | null;
   eligibility: Eligibility;
-  mode: Mode;
+  mode: Mode | null;
   /** Last /admin/me refresh failed for lack of connectivity: the cached staff record is shown. */
   offline: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<StaffMe | null>;
   setMode: (m: Mode) => Promise<void>;
 }
 
@@ -34,7 +34,7 @@ interface LastStaff {
 /**
  * Session state (BUD-67): the staff record is refreshed on launch and every foreground, so role or agent-record
  * changes made by an admin take effect without a reinstall. Any 401 (token revoked, user suspended) signs out locally.
- * Cannabis mode is offered only when `eligibility().cannabis`; otherwise the courier placeholder is shown.
+ * Delivery access and active work come from the server.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -52,20 +52,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     qc.clear();
     setMe(null);
     setStatus("signedOut");
+    void refreshStatus();
   }, [qc]);
 
   const refresh = useCallback(async () => {
-    if (!auth.getToken()) return;
+    const token = auth.getToken();
+    if (!token) return null;
     try {
       const fresh = await api.me();
+      if (auth.getToken() !== token) return null;
       setMe(fresh);
       setOffline(false);
       await kv.set(ME_KEY, fresh);
       await kv.set(KV.lastStaff, { id: fresh.id, name: fresh.name } satisfies LastStaff);
+      return fresh;
     } catch (e) {
       if (e instanceof NetworkError) setOffline(true);
       else if (e instanceof ApiError && e.status === 401) await dropToSignIn();
       else throw e;
+      return null;
     }
   }, [dropToSignIn]);
 
@@ -111,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMe(out.staff);
     await kv.set(ME_KEY, out.staff);
     await kv.set(KV.lastStaff, { id: out.staff.id, name: out.staff.name } satisfies LastStaff);
+    await refreshStatus();
     setStatus("signedIn");
     await refresh().catch(() => undefined);
     void registerPush().catch(() => undefined);
@@ -129,13 +135,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [dropToSignIn]);
 
   const setMode = useCallback(async (m: Mode) => {
-    setModeState(m);
+    const fresh = await refresh();
+    if (!fresh) throw new Error("Connect to BudGrub to switch delivery modes.");
+    if (!eligibility(fresh)[m]) throw new Error("This delivery mode is unavailable for your account.");
+    const requested = m === "courier" ? "food" : "cannabis";
+    if (fresh.activeDeliveryMode && fresh.activeDeliveryMode !== requested) {
+      throw new Error(fresh.activeDeliveryMode === "food"
+        ? "Finish all food deliveries and end the food shift before switching."
+        : "Finish the cannabis trip and end any open cannabis shift before switching.");
+    }
+    if ((await queue.pending()).length) throw new Error("Sync your outstanding delivery steps before switching.");
     await kv.set(KV.mode, m);
-  }, []);
+    setModeState(m);
+  }, [refresh]);
 
   const value = useMemo<AuthState>(() => {
     const el = eligibility(me);
-    return { status, me, eligibility: el, mode: el.cannabis ? mode : "courier", offline, signIn, signOut, refresh, setMode };
+    const activeMode = me?.activeDeliveryMode === "food" ? "courier" : me?.activeDeliveryMode;
+    const selected = activeMode && el[activeMode] ? activeMode : el[mode] ? mode : el.cannabis ? "cannabis" : el.courier ? "courier" : null;
+    return { status, me, eligibility: el, mode: selected, offline, signIn, signOut, refresh, setMode };
   }, [status, me, mode, offline, signIn, signOut, refresh, setMode]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

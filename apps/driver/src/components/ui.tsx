@@ -15,10 +15,10 @@ export function Screen({ children, scroll = true, footer }: { children: ReactNod
   );
 }
 
-export function T({ children, size = "base", tone, bold, mono, style, numberOfLines }: { children: ReactNode; size?: keyof typeof font.size; tone?: "text" | "text2" | "text3" | Tone; bold?: boolean; mono?: boolean; style?: object; numberOfLines?: number }) {
-  const fg = !tone || tone === "text" ? color.text : tone === "text2" ? color.text2 : tone === "text3" ? color.text3 : toneColors[tone].fg;
+export function T({ children, size = "base", tone, bold, mono, style, numberOfLines, accessibilityRole, accessibilityLiveRegion }: { children: ReactNode; size?: keyof typeof font.size; tone?: "text" | "text2" | "text3" | "onAccent" | Tone; bold?: boolean; mono?: boolean; style?: object; numberOfLines?: number; accessibilityRole?: import("react-native").TextProps["accessibilityRole"]; accessibilityLiveRegion?: import("react-native").TextProps["accessibilityLiveRegion"] }) {
+  const fg = !tone || tone === "text" ? color.text : tone === "text2" ? color.text2 : tone === "text3" ? color.text3 : tone === "onAccent" ? color.onAccent : toneColors[tone].fg;
   return (
-    <Text numberOfLines={numberOfLines} style={[{ color: fg, fontSize: font.size[size], fontWeight: bold ? font.weight.bold : font.weight.regular, fontFamily: mono ? font.mono : undefined, lineHeight: font.size[size] * 1.35 }, style]}>
+    <Text accessibilityRole={accessibilityRole} accessibilityLiveRegion={accessibilityLiveRegion} numberOfLines={numberOfLines} style={[{ color: fg, fontSize: font.size[size], fontWeight: bold ? font.weight.bold : font.weight.regular, fontFamily: mono ? font.mono : undefined, lineHeight: font.size[size] * 1.35 }, style]}>
       {children}
     </Text>
   );

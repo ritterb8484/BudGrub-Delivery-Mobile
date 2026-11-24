@@ -24,11 +24,12 @@ export type EventKind =
   | "stop_action"
   | "load"
   | "trip_event"
-  | "incident";
+  | "incident"
+  | "courier_step";
 
 export interface QueuedEvent {
   id: string;
-  /** "trip:<tripId>" for trip-scoped events (sequenced), "incidents" for incidents filed outside a trip. */
+  /** Streams for cannabis trips, standalone incidents, and food deliveries. */
   scope: string;
   sequence: number;
   /** When true the server enforces ordering on this scope and the body carries `sequence`. */
@@ -96,6 +97,7 @@ export interface QueueOptions {
 }
 
 export const tripScope = (tripId: string) => `trip:${tripId}`;
+export const courierScope = (staffId: string, deliveryId: string) => `courier:${staffId}:${deliveryId}`;
 
 export class EventQueue {
   private draining: Promise<DrainReport> | null = null;

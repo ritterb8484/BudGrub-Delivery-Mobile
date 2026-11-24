@@ -91,17 +91,26 @@ describe("eligibility (cannabis mode gating)", () => {
   });
   const today = new Date("2026-11-10T12:00:00Z");
 
-  it("allows cannabis mode for an active, disclosed, unexpired agent", () => {
-    expect(eligibility(me(), today)).toEqual({ cannabis: true, courier: true, problems: [] });
+  it("defaults an existing carded driver to cannabis only", () => {
+    expect(eligibility(me(), today)).toEqual({ cannabis: true, courier: false, problems: [] });
+    expect(eligibility(me({ deliveryAccess: "cannabis" }), today)).toMatchObject({ cannabis: true, courier: false });
   });
-  it("falls back to courier when the agent card is expired, missing or undisclosed", () => {
-    expect(eligibility(me({ agent: { agentCardNumber: "X", agentCardExpires: "2026-11-09", disclosedToCcb: true } }), today)).toMatchObject({ cannabis: false, courier: true });
+  it("honors Food Only and Both access and supports legacy food couriers", () => {
+    expect(eligibility(me({ deliveryAccess: "food", agent: null }), today)).toMatchObject({ cannabis: false, courier: true });
+    expect(eligibility(me({ deliveryAccess: "both" }), today)).toMatchObject({ cannabis: true, courier: true });
+    expect(eligibility(me({ role: "courier", agent: null }), today)).toMatchObject({ cannabis: false, courier: true });
+  });
+  it("keeps food access after card expiry only for a driver granted Both", () => {
+    const agent = { agentCardNumber: "X", agentCardExpires: "2026-11-09", disclosedToCcb: true };
+    expect(eligibility(me({ agent }), today)).toMatchObject({ cannabis: false, courier: false });
+    expect(eligibility(me({ deliveryAccess: "both", agent }), today)).toMatchObject({ cannabis: false, courier: true });
     expect(eligibility(me({ agent: null }), today).cannabis).toBe(false);
     expect(eligibility(me({ agent: { agentCardNumber: "X", agentCardExpires: "2027-01-01", disclosedToCcb: false } }), today).problems).toContain("Agent card not disclosed to the CCB");
   });
   it("blocks both modes for suspended or non-driver staff", () => {
     expect(eligibility(me({ status: "suspended" }), today)).toMatchObject({ cannabis: false, courier: false });
     expect(eligibility(me({ role: "dispatcher" }), today)).toMatchObject({ cannabis: false, courier: false });
+    expect(eligibility(me({ deliveryAccess: "both", active: false }), today)).toMatchObject({ cannabis: false, courier: false });
   });
 });
 
