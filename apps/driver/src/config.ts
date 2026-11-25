@@ -9,11 +9,12 @@ export const API_BASE = Platform.OS === "android" && __DEV__ ? raw.replace(/\/\/
 
 export const VARIANT: "development" | "staging" | "production" = (Constants.expoConfig?.extra?.variant as never) ?? "development";
 
-export const PUSH_TOKEN_KIND: "device" | "expo" = process.env.EXPO_PUBLIC_PUSH_TOKEN_KIND === "expo" ? "expo" : "device";
+export const PUSH_TOKEN_KIND: "device" | "expo" = process.env.EXPO_PUBLIC_PUSH_TOKEN_KIND === "device" ? "device" : "expo";
 
 /** Registered with the API as the `driver` OIDC client (apps/api/src/config.ts client redirect URIs). */
-export const AUTH_REDIRECT = "budgrub-driver://auth/callback";
+export const AUTH_REDIRECT = (Constants.expoConfig?.extra?.authRedirect as string | undefined) ?? "budgrub-driver://auth/callback";
 export const AUTH_CLIENT = "driver";
+export const FOOD_DISPATCH_PHONE = process.env.EXPO_PUBLIC_FOOD_DISPATCH_PHONE?.replace(/[^+\d]/g, "") || null;
 
 export const LOCATION_TASK = "budgrub-trip-location";
 

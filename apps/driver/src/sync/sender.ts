@@ -38,7 +38,9 @@ export function createHttpSender(post: Poster, opts: { hasToken: () => boolean; 
       const expected = errorDetails(err.body).expectedSequence;
       if (typeof expected === "number") return { kind: "out_of_order", expected };
     }
-    if (res.status === 408 || res.status === 429 || res.status >= 500) return { kind: "retry", error: `${err.code}: ${err.message}` };
+    if (res.status === 408 || (res.status === 429 && err.code !== "PICKUP_LOCKED") || res.status >= 500) {
+      return { kind: "retry", error: `${err.code}: ${err.message}` };
+    }
     return { kind: "rejected", status: res.status, code: err.code, message: err.message, body: err.body };
   };
 }

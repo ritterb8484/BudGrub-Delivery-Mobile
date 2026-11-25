@@ -6,6 +6,7 @@ import { api, newEventId } from "@/courier/api";
 import { Button, Callout, Card, KeyValue, Pill, Row, Screen, Text } from "@/courier/ui";
 import { API_BASE } from "@/config";
 import { TOUCH, radius, color as theme } from "@/theme";
+import { discardTemporaryPhoto } from "@/trip/photo";
 import { useAuth } from "@/auth/AuthProvider";
 
 const KINDS = [["drivers_license", "Driver's license"], ["insurance", "Insurance card"], ["vehicle_registration", "Vehicle registration"], ["agent_card", "Agent registration card"]] as const;
@@ -24,7 +25,11 @@ export default function DocumentsScreen() {
     const perm = camera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setError("Permission is needed to attach the document."); return; }
     const r = camera ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6, mediaTypes: ["images"] }) : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.6, mediaTypes: ["images"] });
-    if (!r.canceled && r.assets[0]?.base64) setFile({ mime: r.assets[0].mimeType === "image/png" ? "image/png" : "image/jpeg", dataBase64: r.assets[0].base64 });
+    const asset = r.canceled ? null : r.assets[0];
+    if (asset?.base64) {
+      setFile({ mime: asset.mimeType === "image/png" ? "image/png" : "image/jpeg", dataBase64: asset.base64 });
+      discardTemporaryPhoto(asset.uri);
+    }
   };
   const upload = async () => {
     if (!file) return;

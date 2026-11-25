@@ -12,11 +12,17 @@ import tokens from "@budgrub/design-tokens/tokens.json";
 const VARIANT = (process.env.APP_VARIANT ?? "development") as "development" | "staging" | "production";
 const SUFFIX = VARIANT === "production" ? "" : VARIANT === "staging" ? ".staging" : ".dev";
 const NAME_SUFFIX = VARIANT === "production" ? "" : VARIANT === "staging" ? " (Staging)" : " (Dev)";
+const AUTH_SCHEME = VARIANT === "staging" ? "budgrub-driver-staging" : "budgrub-driver";
 
 // expo-camera and expo-image-picker both write NSCameraUsageDescription and the last plugin wins, so they must carry
 // the same text, and it has to cover every use of the camera.
 const CAMERA_PURPOSE =
-  "BudGrub scans Metrc package tags and the barcode on the customer's ID, and takes photos of the sealed load and fuel receipts for the trip record. ID images are never stored.";
+  "BudGrub scans pickup codes, package tags, and ID barcodes. The camera also captures proof of delivery, onboarding documents, sealed loads, and fuel receipts. Customer ID images are never captured.";
+if (VARIANT !== "development") {
+  const api = process.env.EXPO_PUBLIC_API_BASE;
+  if (!api || !/^https:\/\/[^/]+\/api\/?$/.test(api)) throw new Error("Set EXPO_PUBLIC_API_BASE to the HTTPS BudGrub API ending in /api.");
+  if (!process.env.EAS_PROJECT_ID) throw new Error("Set EAS_PROJECT_ID for push and updates.");
+}
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -28,7 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: "dark",
   backgroundColor: tokens.color.bg,
   // Registered with the API as the third OIDC client: budgrub-driver://auth/callback
-  scheme: "budgrub-driver",
+  scheme: AUTH_SCHEME,
   platforms: ["ios", "android"],
   runtimeVersion: { policy: "fingerprint" },
   updates: process.env.EAS_PROJECT_ID ? { url: `https://u.expo.dev/${process.env.EAS_PROJECT_ID}` } : undefined,
@@ -42,6 +48,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: `com.budgrub.driver${SUFFIX}`,
+    allowBackup: false,
+    googleServicesFile: process.env.ANDROID_GOOGLE_SERVICES_JSON || undefined,
     adaptiveIcon: {
       backgroundColor: tokens.color.bg,
       foregroundImage: "./assets/android-icon-foreground.png",
@@ -65,7 +73,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-router",
     "expo-secure-store",
     "expo-web-browser",
-    "expo-sqlite",
+    ["expo-sqlite", { useSQLCipher: true }],
     [
       "expo-location",
       {
@@ -90,7 +98,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-image-picker",
       {
         cameraPermission: CAMERA_PURPOSE,
-        photosPermission: false,
+        photosPermission: "BudGrub lets you attach an existing photo of your courier onboarding document.",
         microphonePermission: false,
       },
     ],
@@ -101,6 +109,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   experiments: { typedRoutes: true },
   extra: {
     variant: VARIANT,
+    authRedirect: `${AUTH_SCHEME}://auth/callback`,
     eas: process.env.EAS_PROJECT_ID ? { projectId: process.env.EAS_PROJECT_ID } : undefined,
   },
 });

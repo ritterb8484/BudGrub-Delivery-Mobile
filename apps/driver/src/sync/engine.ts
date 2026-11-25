@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import { auth, rawRequest } from "@/api/client";
 import { SYNC_INTERVAL_MS } from "@/config";
-import { kv, KV, SqliteQueueStore } from "@/storage/db";
+import { kv, KV, pruneSettledCourierRecords, SqliteQueueStore } from "@/storage/db";
 import { courierScope, EventQueue, tripScope, type EnqueueInput, type QueuedEvent } from "./queue";
 import { createHttpSender } from "./sender";
 
@@ -144,7 +144,7 @@ export async function purgeSettledTrips(currentTripId: string | null): Promise<v
 
 /** Start the replay triggers: connectivity regained, app foregrounded, and a timer while anything is pending. */
 export function startSyncLoop(): () => void {
-  void refreshStatus().then(() => syncNow());
+  void pruneSettledCourierRecords().then(refreshStatus).then(syncNow).catch(() => undefined);
   const net = Network.addNetworkStateListener((s) => {
     const online = Boolean(s.isConnected && s.isInternetReachable !== false);
     publish({ online });

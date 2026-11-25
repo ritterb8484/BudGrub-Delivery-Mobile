@@ -1,0 +1,61 @@
+name: Driver verification and signed builds
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/driver.yml"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Signed build profile
+        type: choice
+        required: true
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm --filter @budgrub/driver lint
+      - run: pnpm test
+      - run: pnpm --filter @budgrub/driver build
+
+  signed-build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.profile }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build both platforms
+        working-directory: apps/driver
+        env:
+          BUILD_PROFILE: ${{ inputs.profile }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+          EXPO_PUBLIC_API_BASE: ${{ vars.EXPO_PUBLIC_API_BASE }}
+        run: eas build --platform all --profile "$BUILD_PROFILE" --non-interactive --wait

@@ -1,6 +1,6 @@
 import * as Crypto from "expo-crypto";
 import { request } from "@/api/client";
-import type { ContactThread, CourierDelivery, CourierHome, Earnings, ShiftRow, StaffDocument } from "./types";
+import type { ContactThread, CourierDelivery, CourierHome, CourierSettlement, Earnings, ShiftRow, StaffDocument } from "./types";
 
 export const newEventId = () => Crypto.randomUUID();
 
@@ -13,6 +13,8 @@ export const api = {
   startShift: (mode: "food") => request<{ shift: ShiftRow }>("/admin/courier/shifts/start", { body: { mode } }),
   endShift: () => request<{ shift: ShiftRow }>("/admin/courier/shifts/end", { body: {} }),
   shifts: () => request<{ shifts: ShiftRow[] }>("/admin/courier/shifts").then((r) => r.shifts),
+  settlements: () => request<{ settlements: CourierSettlement[] }>("/admin/courier/settlements").then(r => r.settlements),
+  reportLocation: (point: { lat: number; lng: number }) => request("/admin/courier/location", { body: point }),
   earnings: () => request<Earnings>("/admin/courier/earnings"),
   documents: () => request<{ documents: StaffDocument[] }>("/admin/courier/documents").then((r) => r.documents),
   uploadDocument: (body: { kind: string; number: string | null; expires: string | null; file: { mime: string; dataBase64: string } }, key: string) =>

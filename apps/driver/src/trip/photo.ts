@@ -1,4 +1,4 @@
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 
 /**
@@ -12,10 +12,15 @@ export async function takeEvidencePhoto(): Promise<{ mime: string; dataBase64: s
   if (r.canceled || !r.assets[0]?.base64) return null;
   const a = r.assets[0];
   const out = { mime: a.mimeType ?? "image/jpeg", dataBase64: a.base64!, previewUri: `data:${a.mimeType ?? "image/jpeg"};base64,${a.base64}` };
+  discardTemporaryPhoto(a.uri);
+  return out;
+}
+
+export function discardTemporaryPhoto(uri: string) {
+  if (!uri.startsWith(`${Paths.cache.uri.replace(/\/$/, "")}/`)) return;
   try {
-    new File(a.uri).delete();
+    new File(uri).delete();
   } catch {
     /* already gone */
   }
-  return out;
 }

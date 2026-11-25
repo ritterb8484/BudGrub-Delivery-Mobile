@@ -167,6 +167,7 @@ export interface StaffMe {
   role: StaffRole;
   active?: boolean;
   deliveryAccess?: "cannabis" | "food" | "both" | null;
+  dispatchPhone?: string | null;
   activeDeliveryMode?: "cannabis" | "food" | null;
   deliveryShift?: "cannabis" | "food" | null;
   status?: "active" | "suspended" | string;
@@ -181,6 +182,7 @@ export interface StaffMe {
 }
 
 export interface IncidentInput {
+  occurredAt?: string;
   kind: "crash" | "theft_loss" | "unauthorized_stop" | "other";
   description: string;
   location: string | null;

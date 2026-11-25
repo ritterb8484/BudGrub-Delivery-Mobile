@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ScrollView } from "react-native";
 import { api } from "@/courier/api";
@@ -7,6 +8,7 @@ import { money } from "@/courier/format";
 
 /** Earnings (BUD-145): today / this week / this month split into delivery pay, tips and bonuses, with line items. */
 export default function EarningsScreen() {
+  const settlements = useQuery({ queryKey: ["courier-settlements"], queryFn: api.settlements });
   const [e, setE] = useState<Earnings | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { api.earnings().then(setE).catch((x: Error) => setError(x.message)); }, []);
@@ -28,6 +30,12 @@ export default function EarningsScreen() {
         <Text kind="h1" accessibilityRole="header">Earnings</Text>
         <Row style={{ alignItems: "stretch" }}>{block("Today", e.today)}{block("This week", e.week)}</Row>
         {block("This month", e.month)}
+        <Card>
+          <Text kind="title">Settlements</Text>
+          {settlements.error && <Text tone="danger">{settlements.error.message}</Text>}
+          {settlements.data?.map(row => <KeyValue key={row.id} k={`${row.state === "paid" ? "Paid" : "Approved"} · ${new Date(row.paidAt ?? row.cutoffAt).toLocaleDateString()}`} v={money(row.cents)} />)}
+          {settlements.data?.length === 0 && <Text tone="text2">Approved and paid settlements appear here.</Text>}
+        </Card>
         <Card>
           <Text kind="title">Line items</Text>
           {e.lines.map((l) => <KeyValue key={l.id} k={`${new Date(l.at).toLocaleDateString([], { month: "short", day: "numeric" })} · ${l.kind}${l.orderNumber ? ` · ${l.orderNumber}` : ""}${l.vendor ? ` · ${l.vendor}` : ""}${l.note && !l.orderNumber ? ` · ${l.note}` : ""}`} v={money(l.cents)} />)}

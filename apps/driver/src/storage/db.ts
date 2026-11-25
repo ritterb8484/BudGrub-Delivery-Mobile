@@ -1,4 +1,7 @@
 import * as SQLite from "expo-sqlite";
+import * as SecureStore from "expo-secure-store";
+import * as Crypto from "expo-crypto";
+import { File } from "expo-file-system";
 import type { QueueStore, QueuedEvent } from "@/sync/queue";
 
 /**
@@ -6,12 +9,26 @@ import type { QueueStore, QueuedEvent } from "@/sync/queue";
  * geofences, dwell state and load-scan session. Opened lazily so the background location task (which can run without
  * the UI) shares the same file.
  */
-let db: SQLite.SQLiteDatabase | null = null;
+let ready: Promise<SQLite.SQLiteDatabase> | null = null;
+const legacyName = "budgrub-driver.db";
+const secureName = "budgrub-driver-secure.db";
+const keyName = "budgrub.driver.db-key";
 
-export function database(): SQLite.SQLiteDatabase {
-  if (db) return db;
-  db = SQLite.openDatabaseSync("budgrub-driver.db");
-  db.execSync(`
+async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
+  let key = await SecureStore.getItemAsync(keyName);
+  if (!key) {
+    if (new File(SQLite.defaultDatabaseDirectory, secureName).exists) {
+      throw new Error("The device could not unlock its delivery records.");
+    }
+    key = Array.from(await Crypto.getRandomBytesAsync(32), byte => byte.toString(16).padStart(2, "0")).join("");
+    await SecureStore.setItemAsync(keyName, key, { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY });
+  }
+  if (!/^[a-f0-9]{64}$/.test(key)) throw new Error("Invalid delivery storage key.");
+  const db = await SQLite.openDatabaseAsync(secureName, { useNewConnection: true });
+  try {
+    await db.execAsync(`PRAGMA key = "x'${key}'"`);
+    if (!await db.getFirstAsync("PRAGMA cipher_version")) throw new Error("This build lacks encrypted delivery storage.");
+    await db.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY NOT NULL,
@@ -33,7 +50,48 @@ export function database(): SQLite.SQLiteDatabase {
     CREATE TABLE IF NOT EXISTS counters (scope TEXT PRIMARY KEY NOT NULL, value INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL);
   `);
-  return db;
+    await migrateLegacyDatabase(db);
+    return db;
+  } catch (error) {
+    await db.closeAsync().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function migrateLegacyDatabase(db: SQLite.SQLiteDatabase) {
+  const legacy = new File(SQLite.defaultDatabaseDirectory, legacyName);
+  if (!legacy.exists) return;
+  const done = await db.getFirstAsync("SELECT 1 FROM kv WHERE key = 'storage.encryptedMigration'");
+  if (!done) {
+    const path = legacy.uri.startsWith("file://") ? decodeURIComponent(legacy.uri.slice(7)) : legacy.uri;
+    await db.runAsync("ATTACH DATABASE ? AS legacy KEY ''", path);
+    try {
+      await db.withTransactionAsync(async () => {
+        await db.execAsync(`
+          INSERT OR IGNORE INTO main.events SELECT * FROM legacy.events;
+          INSERT OR IGNORE INTO main.counters SELECT * FROM legacy.counters;
+          INSERT OR IGNORE INTO main.kv SELECT * FROM legacy.kv;
+          INSERT INTO main.kv(key,value,updated_at) VALUES ('storage.encryptedMigration','true',datetime('now'));
+        `);
+      });
+    } finally {
+      await db.execAsync("DETACH DATABASE legacy");
+    }
+  }
+  // The unencrypted database is removed only after the encrypted copy commits.
+  await SQLite.deleteDatabaseAsync(legacyName);
+}
+
+function database(): Promise<SQLite.SQLiteDatabase> {
+  return ready ??= openDatabase().catch(error => { ready = null; throw error; });
+}
+
+export async function pruneSettledCourierRecords() {
+  const db = await database();
+  const cutoff = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  await db.runAsync("DELETE FROM events WHERE kind = 'courier_step' AND status <> 'pending' AND device_ts < ?", cutoff);
+  const cacheCutoff = new Date(Date.now() - 86_400_000).toISOString();
+  await db.runAsync("DELETE FROM kv WHERE key LIKE 'cache.food.%' AND updated_at < ?", cacheCutoff);
 }
 
 interface EventRow {
@@ -83,7 +141,7 @@ function toColumnValue(key: string, v: unknown): SQLite.SQLiteBindValue {
 
 export class SqliteQueueStore implements QueueStore {
   async insert(e: QueuedEvent) {
-    await database().runAsync(
+    await (await database()).runAsync(
       `INSERT INTO events (id, scope, sequence, sequenced, kind, path, body, device_ts, status, attempts, last_error, response, acked_at, meta)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       e.id, e.scope, e.sequence, e.sequenced ? 1 : 0, e.kind, e.path, JSON.stringify(e.body), e.deviceTs, e.status, e.attempts,
@@ -96,35 +154,31 @@ export class SqliteQueueStore implements QueueStore {
     if (!keys.length) return;
     const sets = keys.map((k) => `${COLUMN[k]} = ?`).join(", ");
     const values = keys.map((k) => toColumnValue(k, (patch as Record<string, unknown>)[k]));
-    await database().runAsync(`UPDATE events SET ${sets} WHERE id = ?`, ...values, id);
+    await (await database()).runAsync(`UPDATE events SET ${sets} WHERE id = ?`, ...values, id);
   }
 
   async listScope(scope: string) {
-    const rows = await database().getAllAsync<EventRow>("SELECT * FROM events WHERE scope = ? ORDER BY sequence ASC", scope);
+    const rows = await (await database()).getAllAsync<EventRow>("SELECT * FROM events WHERE scope = ? ORDER BY sequence ASC", scope);
     return rows.map(fromRow);
   }
 
   async scopes() {
-    const rows = await database().getAllAsync<{ scope: string }>("SELECT DISTINCT scope FROM events ORDER BY scope");
+    const rows = await (await database()).getAllAsync<{ scope: string }>("SELECT DISTINCT scope FROM events ORDER BY scope");
     return rows.map((r) => r.scope);
   }
 
   async deleteScope(scope: string) {
-    await database().runAsync("DELETE FROM events WHERE scope = ?", scope);
+    await (await database()).runAsync("DELETE FROM events WHERE scope = ?", scope);
   }
 
   async nextSequence(scope: string) {
-    let next = 0;
-    await database().withExclusiveTransactionAsync(async (tx) => {
-      const row = await tx.getFirstAsync<{ value: number }>("SELECT value FROM counters WHERE scope = ?", scope);
-      next = (row?.value ?? 0) + 1;
-      await tx.runAsync("INSERT INTO counters (scope, value) VALUES (?, ?) ON CONFLICT(scope) DO UPDATE SET value = excluded.value", scope, next);
-    });
-    return next;
+    const row = await (await database()).getFirstAsync<{ value: number }>(
+      "INSERT INTO counters (scope, value) VALUES (?, 1) ON CONFLICT(scope) DO UPDATE SET value = value + 1 RETURNING value", scope);
+    return row!.value;
   }
 
   async bumpSequence(scope: string, atLeast: number) {
-    await database().runAsync(
+    await (await database()).runAsync(
       "INSERT INTO counters (scope, value) VALUES (?, ?) ON CONFLICT(scope) DO UPDATE SET value = MAX(value, excluded.value)",
       scope, atLeast - 1,
     );
@@ -134,17 +188,20 @@ export class SqliteQueueStore implements QueueStore {
 /** Key/value cache (trip payload, rules, geofences, dwell state, load session, acceptance snapshot). */
 export const kv = {
   async get<T>(key: string): Promise<T | null> {
-    const row = await database().getFirstAsync<{ value: string }>("SELECT value FROM kv WHERE key = ?", key);
+    const row = await (await database()).getFirstAsync<{ value: string }>("SELECT value FROM kv WHERE key = ?", key);
     return row ? (JSON.parse(row.value) as T) : null;
   },
   async set(key: string, value: unknown): Promise<void> {
-    await database().runAsync(
+    await (await database()).runAsync(
       "INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
       key, JSON.stringify(value), new Date().toISOString(),
     );
   },
+  async removePrefix(prefix: string): Promise<void> {
+    await (await database()).runAsync("DELETE FROM kv WHERE substr(key, 1, length(?)) = ?", prefix, prefix);
+  },
   async remove(key: string): Promise<void> {
-    await database().runAsync("DELETE FROM kv WHERE key = ?", key);
+    await (await database()).runAsync("DELETE FROM kv WHERE key = ?", key);
   },
 };
 

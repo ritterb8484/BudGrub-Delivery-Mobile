@@ -4,6 +4,7 @@ import { AppState } from "react-native";
 import { api, ApiError, auth, NetworkError, rawRequest } from "@/api/client";
 import type { StaffMe } from "@/api/types";
 import { deregisterPush, registerPush } from "@/push/register";
+import { stopTracking } from "@/location/task";
 import { kv, KV } from "@/storage/db";
 import { queue, refreshStatus } from "@/sync/engine";
 import { eligibility, type Eligibility } from "./eligibility";
@@ -48,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     auth.setToken(null);
     await tokenStore.clear();
     // The cached trip payload goes too: it is the previous driver's manifest and customer details.
-    await Promise.all([kv.remove(ME_KEY), kv.remove(KV.driverTrips)]);
+    await Promise.all([kv.remove(ME_KEY), kv.remove(KV.driverTrips), kv.removePrefix("cache.food.")]);
     qc.clear();
     setMe(null);
     setStatus("signedOut");
@@ -145,6 +146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : "Finish the cannabis trip and end any open cannabis shift before switching.");
     }
     if ((await queue.pending()).length) throw new Error("Sync your outstanding delivery steps before switching.");
+    if (m === "courier") {
+      await stopTracking();
+      await Promise.all([kv.remove(KV.driverTrips), kv.remove(KV.accepted), kv.remove(KV.loadSession)]);
+    }
     await kv.set(KV.mode, m);
     setModeState(m);
   }, [refresh]);

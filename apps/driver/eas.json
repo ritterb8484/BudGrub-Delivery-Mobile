@@ -17,13 +17,13 @@
       "distribution": "internal",
       "channel": "staging",
       "environment": "preview",
-      "env": { "APP_VARIANT": "staging", "EXPO_PUBLIC_API_BASE": "https://staging-api.budgrub.com/api" }
+      "env": { "APP_VARIANT": "staging", "EXPO_PUBLIC_PUSH_TOKEN_KIND": "expo" }
     },
     "production": {
       "channel": "production",
       "environment": "production",
       "autoIncrement": true,
-      "env": { "APP_VARIANT": "production", "EXPO_PUBLIC_API_BASE": "https://api.budgrub.com/api" }
+      "env": { "APP_VARIANT": "production", "EXPO_PUBLIC_PUSH_TOKEN_KIND": "expo" }
     }
   },
   "submit": { "production": {} }

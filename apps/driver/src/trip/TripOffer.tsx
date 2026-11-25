@@ -10,7 +10,7 @@ import { Btn, Callout, CheckRow, Divider, Field, Input, Panel, Row, Select, Stat
 import { clock, money, parseCents, plural } from "@/lib/format";
 import { manifestLines, summarise } from "@/load/manifest";
 import { permissionSnapshot } from "@/location/permissions";
-import { startTracking } from "@/location/task";
+import { handleLocations, prepareTracking, startTracking } from "@/location/task";
 import { color, radius, space } from "@/theme";
 import { takeEvidencePhoto } from "./photo";
 import { accept, clearTripLocal, manifestChanged, submitLoad, useTripLocal } from "./state";
@@ -95,13 +95,25 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
     onError: toast.fail,
   });
 
+  const confirmTracker = async () => {
+    const sample = await prepareTracking(trip);
+    await api.confirmTraceReady(trip.id, new Date(sample.timestamp).toISOString());
+    return sample;
+  };
+  const trackingReadiness = useMutation({
+    mutationFn: confirmTracker,
+    onSuccess: () => toast.ok("Tracking confirmed. Ask dispatch to depart within three minutes."),
+    onError: toast.fail,
+  });
+
   const depart = useMutation({
     mutationFn: async () => {
       if (floatCents === null) throw new Error("Enter the float as an amount, for example 40.00.");
+      const sample = await confirmTracker();
       const t = await api.depart(trip.id, answers, cashTrip ? floatCents : 0);
       // The trip has departed on the server whatever happens next; the trip screen retries and warns if the trace
       // cannot start, so a tracking error must not be reported as a failed departure.
-      await startTracking({ ...trip, ...t }).catch(() => false);
+      await startTracking({ ...trip, ...t }).then(started => started ? handleLocations([sample]) : undefined).catch(() => undefined);
       return t;
     },
     onSuccess: () => {
@@ -223,7 +235,8 @@ export function TripOffer({ trip, checklist, degraded, onRefresh }: { trip: Trip
             ) : null}
             <T size="sm" tone="text3">Departing records you and the vehicle on every Metrc sales delivery. Load only the sealed orders listed above.</T>
             {degraded ? (
-              <Callout tone="danger" title="Your dispatcher departs this trip">Metrc is degraded, so a manual manifest has to be recorded first. Attest the checklist with your dispatcher.</Callout>
+              <><Callout tone="danger" title="Your dispatcher departs this trip">Metrc is degraded. Confirm tracking and ask your dispatcher to record the manual manifest and depart.</Callout>
+                <Btn busy={trackingReadiness.isPending} disabled={alwaysLocation === false} onPress={() => trackingReadiness.mutate()}>Confirm tracking for dispatch</Btn></>
             ) : (
               <>
                 {blockers.length ? <View style={{ gap: 2 }}>{blockers.map((b) => <T key={b} size="sm" tone="amber">• {b}</T>)}</View> : null}

@@ -21,6 +21,7 @@ import { DEFAULT_DWELL, initialDwellState, runDwell, tripGeofences, type DwellCo
 
 export interface ActiveTripContext {
   tripId: string;
+  armed?: boolean;
   dwell: DwellConfig;
 }
 
@@ -44,7 +45,7 @@ export function activeContextFor(trip: Trip): ActiveTripContext {
 
 export async function handleLocations(locations: Location.LocationObject[]): Promise<void> {
   const ctx = await kv.get<ActiveTripContext>(KV.activeTrip);
-  if (!ctx || !locations.length) return;
+  if (!ctx || ctx.armed === false || !locations.length) return;
 
   // Keep the trace at ≥10 s spacing even if the OS delivers more often.
   const lastAt = (await kv.get<number>(KV.lastPingAt)) ?? 0;
@@ -116,8 +117,8 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(LOCATION_TASK, 
   await handleLocations(data.locations).catch(() => undefined);
 });
 
-export async function startTracking(trip: Trip): Promise<boolean> {
-  await kv.set(KV.activeTrip, activeContextFor(trip));
+export async function startTracking(trip: Trip, armed = true): Promise<boolean> {
+  await kv.set(KV.activeTrip, { ...activeContextFor(trip), armed });
   const bg = await Location.getBackgroundPermissionsAsync();
   if (!bg.granted) return false;
   if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)) return true;
@@ -142,7 +143,7 @@ export async function startTracking(trip: Trip): Promise<boolean> {
 /** Refresh the geofences/threshold the background task uses after a plan amendment. */
 export async function updateTrackingContext(trip: Trip) {
   const cur = await kv.get<ActiveTripContext>(KV.activeTrip);
-  if (cur?.tripId === trip.id) await kv.set(KV.activeTrip, activeContextFor(trip));
+  if (cur?.tripId === trip.id) await kv.set(KV.activeTrip, { ...activeContextFor(trip), armed: cur.armed });
 }
 
 /**
@@ -164,6 +165,23 @@ export async function reconcileTracking(current: Pick<Trip, "id" | "status"> | n
 export async function stopTracking(): Promise<void> {
   if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
   await Promise.all([kv.remove(KV.activeTrip), kv.remove(KV.dwellState), kv.remove(KV.dwellPrompt), kv.remove(KV.lastPingAt)]);
+}
+
+export async function prepareTracking(trip: Trip): Promise<Location.LocationObject> {
+  if (!await startTracking(trip, false)) throw new Error('Set location access to "Always" before departing.');
+  const recent = await Location.getLastKnownPositionAsync({ maxAge: 30_000, requiredAccuracy: 150 });
+  if (recent) return recent;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const sample = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Location is unavailable. Move to an open area and try again.")), 15_000); }),
+    ]);
+    if (sample.coords.accuracy == null || sample.coords.accuracy > 150) throw new Error("Wait for a more accurate location fix.");
+    return sample;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function currentPosition(): Promise<{ lat: number; lng: number } | null> {

@@ -61,8 +61,8 @@ Scheme `budgrub-driver`, callback `budgrub-driver://auth/callback`. Register it 
 |---|---|---|---|---|
 | `development` | development | `com.budgrub.driver.dev` | `http://localhost:4000/api` | dev client, iOS simulator |
 | `development-device` | development | `com.budgrub.driver.dev` | (set `EXPO_PUBLIC_API_BASE`) | dev client, devices |
-| `staging` | staging | `com.budgrub.driver.staging` | `https://staging-api.budgrub.com/api` | internal |
-| `production` | production | `com.budgrub.driver` | `https://api.budgrub.com/api` | stores |
+| `staging` | staging | `com.budgrub.driver.staging` | EAS preview environment | internal |
+| `production` | production | `com.budgrub.driver` | EAS production environment | stores |
 
 ```bash
 npx eas-cli@latest init                       # once: creates the EAS project; set EAS_PROJECT_ID
@@ -71,13 +71,14 @@ npx eas-cli@latest build --profile development --platform ios
 npx eas-cli@latest update --channel staging   # OTA updates per channel (runtimeVersion: fingerprint)
 ```
 
-The staging/production API hosts in `eas.json` are placeholders; set the real ones there or as EAS env vars. Secrets
-(Google Maps key, EAS project id) live in EAS environment variables, never in the repo.
+Set the real HTTPS API URL and EAS project ID in the matching EAS environment. The standalone app's
+[driver workflow](.github/workflows/driver.yml) runs verification and can request signed builds manually.
+Follow the [pilot setup and device checklist](docs/driver-pilot.md) before distributing either profile.
 
 ### Environment variables
 
-See `apps/driver/.env.example`: `EXPO_PUBLIC_API_BASE`, `APP_VARIANT`, `EXPO_PUBLIC_PUSH_TOKEN_KIND` (`device` = native
-FCM/APNs token for the API's FCM sender, `expo` = Expo push token), `EAS_PROJECT_ID`, `GOOGLE_MAPS_ANDROID_API_KEY`.
+See `apps/driver/.env.example`: `EXPO_PUBLIC_API_BASE`, `APP_VARIANT`, `EXPO_PUBLIC_PUSH_TOKEN_KIND` (`expo` by
+default), `EAS_PROJECT_ID`, `GOOGLE_MAPS_ANDROID_API_KEY`, `ANDROID_GOOGLE_SERVICES_JSON`, and `EXPO_PUBLIC_FOOD_DISPATCH_PHONE`.
 
 ### What the app does
 
@@ -109,7 +110,7 @@ FCM/APNs token for the API's FCM sender, `expo` = Expo push token), `EAS_PROJECT
 
 ### Configure food and cannabis access
 
-Point `EXPO_PUBLIC_API_BASE` at the BudGrub API with migration `019_delivery_access.sql` applied. In BudGrub Admin,
+Point `EXPO_PUBLIC_API_BASE` at the BudGrub API with migrations through `023_convenience_pickup_backfill.sql` applied. In BudGrub Admin,
 open **Staff**, edit a driver, and choose **Cannabis Only**, **Food Only**, or **Both** under **Delivery access**.
 Company Operations activates food courier profiles from **Couriers** after onboarding review. Existing courier accounts
 retain food access. The bundled mock serves cannabis trips. Use the BudGrub API to exercise food courier flows.

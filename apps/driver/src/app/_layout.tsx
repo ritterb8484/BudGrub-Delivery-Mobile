@@ -1,11 +1,11 @@
 // The background location task must be defined at module scope, before anything renders (headless relaunch).
-import "@/location/task";
+import { stopTracking } from "@/location/task";
 
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "@/auth/AuthProvider";
 import { ToastProvider } from "@/components/toast";
@@ -22,25 +22,50 @@ function PushBridge() {
     void ensureChannels();
     if (status === "signedIn") void registerPush().catch(() => undefined);
   }, [status]);
-  const canOpenTrip = status === "signedIn" && mode === "cannabis";
+  const lastTap = useRef<string | null>(null);
+  const { refresh } = useAuth();
   useEffect(() => {
-    const received = Notifications.addNotificationReceivedListener((n) => {
-      const type = (n.request.content.data as { type?: string } | undefined)?.type;
-      if (type && type !== "dwell_prompt") void qc.invalidateQueries({ queryKey: DRIVER_KEY });
-    });
-    const tapped = Notifications.addNotificationResponseReceivedListener((r) => {
+    if (status !== "signedIn" || mode !== "courier") return;
+    void refresh().then(staff => {
+      if (staff && staff.activeDeliveryMode !== "cannabis") return stopTracking();
+    }).catch(() => undefined);
+  }, [mode, refresh, status]);
+
+  useEffect(() => {
+    const invalidate = () => {
       void qc.invalidateQueries({ queryKey: DRIVER_KEY });
-      const type = (r.notification.request.content.data as { type?: string } | undefined)?.type;
-      // Only a signed-in cannabis agent has a trip screen; anyone else stays where the gate put them.
-      if (type?.startsWith("courier_")) {
-        if (status === "signedIn" && mode === "courier") router.navigate("/courier");
-      } else if (type && canOpenTrip) router.navigate("/trip");
-    });
+      void qc.invalidateQueries({ queryKey: ["courier-home"] });
+      void qc.invalidateQueries({ queryKey: ["courier-delivery"] });
+    };
+    const handleTap = (response: Notifications.NotificationResponse) => {
+      if (status !== "signedIn" || !mode) return;
+      const { request } = response.notification;
+      const data = request.content.data as { type?: string; deliveryId?: string };
+      if (!data.type || lastTap.current === request.identifier) return;
+      lastTap.current = request.identifier;
+      void Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
+      invalidate();
+      if (mode === "courier" && data.type.startsWith("courier_")) {
+        if (data.deliveryId && data.type !== "courier_offer") router.navigate({ pathname: "/courier/delivery/[id]", params: { id: data.deliveryId } });
+        else router.navigate("/courier");
+      } else if (mode === "cannabis" && !data.type.startsWith("courier_")) {
+        router.navigate("/trip");
+      }
+    };
+    const received = Notifications.addNotificationReceivedListener(invalidate);
+    const tapped = Notifications.addNotificationResponseReceivedListener(handleTap);
+    let mounted = true;
+    if (status === "signedIn" && mode) {
+      void Notifications.getLastNotificationResponseAsync().then(r => {
+        if (mounted && r) handleTap(r);
+      }).catch(() => undefined);
+    }
     return () => {
+      mounted = false;
       received.remove();
       tapped.remove();
     };
-  }, [qc, canOpenTrip, mode, status]);
+  }, [qc, mode, status]);
   return null;
 }
 

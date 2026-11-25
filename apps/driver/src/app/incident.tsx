@@ -1,19 +1,20 @@
 import { router, useLocalSearchParams } from "expo-router";
+import { Linking } from "react-native";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/auth/AuthProvider";
 import { eventPaths } from "@/api/client";
 import type { IncidentInput } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { Btn, Callout, Field, Input, Screen, Select, T } from "@/components/ui";
 import { clock } from "@/lib/format";
 import { currentPosition } from "@/location/task";
-import { enqueue } from "@/sync/engine";
+import { enqueueAndWait } from "@/sync/engine";
 import { resolveDwellPrompt } from "@/trip/DwellPrompt";
 import { useDriverTrips } from "@/trip/useDriverTrips";
 
 /**
  * Crash, theft/loss or unauthorized stop (POST /admin/incidents, routes/admin/compliance.ts), same fields and time
- * limits as the web console. Queued so a report made without coverage is filed — and dispatch and compliance notified
- * server-side — on replay; the outcome (incident number) shows in the sync log.
+ * limits as the web console. The sync log shows when the server accepts a queued report.
  */
 type Kind = IncidentInput["kind"];
 const KINDS: { value: Kind; label: string }[] = [
@@ -26,6 +27,9 @@ const KINDS: { value: Kind; label: string }[] = [
 export default function Incident() {
   const p = useLocalSearchParams<{ kind?: Kind; lat?: string; lng?: string; startedAt?: string; durationSec?: string; fromPrompt?: string }>();
   const { trip } = useDriverTrips();
+  const { me } = useAuth();
+  const dispatch = me?.dispatchPhone?.replace(/[^+\d]/g, "") || null;
+  const [occurredAt] = useState(() => p.startedAt && Number.isFinite(Date.parse(p.startedAt)) ? new Date(p.startedAt).toISOString() : new Date().toISOString());
   const toast = useToast();
   const [kind, setKind] = useState<Kind>(p.kind ?? "crash");
   const [prefill] = useState(
@@ -49,7 +53,7 @@ export default function Incident() {
     setBusy(true);
     try {
       const body: IncidentInput = {
-        kind,
+        kind, occurredAt,
         description: description.trim(),
         location: location.trim() || (pos ? `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}` : null),
         packages: packages.split(",").map((s) => s.trim()).filter(Boolean),
@@ -61,9 +65,10 @@ export default function Incident() {
         startedAt: p.startedAt ?? null,
         durationSec: p.durationSec ? Number(p.durationSec) : null,
       };
-      await enqueue({ scope: "incidents", kind: "incident", path: eventPaths.incidents(), body: body as unknown as Record<string, unknown>, sequenced: false, meta: { event: "incident", incidentKind: kind, tripId: trip?.id ?? null } });
+      const event = await enqueueAndWait({ scope: "incidents", kind: "incident", path: eventPaths.incidents(), body: body as unknown as Record<string, unknown>, sequenced: false, meta: { event: "incident", incidentKind: kind, tripId: trip?.id ?? null } });
+      if (event.status === "rejected") throw new Error(event.lastError ?? "The server rejected this report.");
       if (p.fromPrompt) await resolveDwellPrompt();
-      toast.ok("Incident saved. Dispatch and compliance are notified as soon as it reaches the server.");
+      toast.ok(event.status === "acked" ? "Incident filed. Alerts are queued for delivery." : "Incident saved on this phone. Call dispatch for urgent help while the report is waiting to upload.");
       router.back();
     } catch (e) {
       toast.fail(e);
@@ -75,8 +80,10 @@ export default function Incident() {
   return (
     <Screen footer={<Btn tone="danger" busy={busy} disabled={!described} onPress={submit}>Submit incident</Btn>}>
       <T size="sm" tone="text3">
-        A crash must reach the Board within 12 hours; theft or loss immediately. Reporting here starts that clock and alerts your dispensary.{!trip ? " You are not on a trip; the report is filed without one." : ""}
+        A crash must reach the Board within 12 hours; theft or loss immediately. This report records when the incident happened. For urgent help, use the phone links below.{!trip ? " You are not on a trip; the report is filed without one." : ""}
       </T>
+      <Btn tone="danger" onPress={() => void Linking.openURL("tel:911").catch(toast.fail)}>Call emergency services</Btn>
+      {dispatch && <Btn onPress={() => void Linking.openURL(`tel:${dispatch}`).catch(toast.fail)}>Call dispatch</Btn>}
       {kind === "theft_loss" ? <Callout tone="danger" title="Theft or loss: report now">If anyone is in danger, call 911 first.</Callout> : null}
       <Field label="What happened"><Select value={kind} options={KINDS} onChange={setKind} /></Field>
       <Field label="Description"><Input multiline value={description} onChangeText={setDescription} placeholder="Where, when, what, who was involved" /></Field>

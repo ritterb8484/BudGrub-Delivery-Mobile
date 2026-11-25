@@ -102,6 +102,7 @@ export const api = {
 
   // Trips (routes/admin/dispatch.ts)
   driverTrips: () => request<DriverTripsResponse>("/admin/driver/trips").then(normalizeDriverTrips),
+  confirmTraceReady: (tripId: string, recordedAt: string) => request<{ ok: true }>(`/admin/driver/trips/${enc(tripId)}/trace-ready`, { body: { recordedAt } }),
   decline: (tripId: string, reason: string) => request<{ ok: true }>(`/admin/driver/trips/${enc(tripId)}/decline`, { method: "POST", body: { reason } }),
   depart: (tripId: string, checklist: Record<string, boolean>, floatIssuedCents: number) =>
     request<unknown>(`/admin/dispatch/trips/${enc(tripId)}/depart`, { method: "POST", body: { checklist, floatIssuedCents } }).then(unwrapTrip),

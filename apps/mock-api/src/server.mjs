@@ -410,6 +410,13 @@ export function createApp(state = createState()) {
     return view(t);
   });
 
+  route("POST", "/api/admin/driver/trips/:id/trace-ready", (req, body, p) => {
+    const t = tripOf(driver(req), p.id);
+    if (t.status !== "planned") throw new HttpError(409, "TRACE_NOT_READY", "Tracking readiness is recorded before departure.");
+    if (!Number.isFinite(Date.parse(body.recordedAt))) throw new HttpError(422, "TRACE_FIX_STALE", "Wait for a fresh location fix.");
+    return { ok: true };
+  });
+
   route("POST", "/api/admin/driver/trips/:id/location", (req, body, p) => {
     const s = driver(req);
     const t = tripOf(s, p.id);
